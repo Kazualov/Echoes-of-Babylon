@@ -1,15 +1,19 @@
 """
-Сборка sentence-level (transliteration, translation) пар:
-  - полный текст транслитерации документа берём из published_texts.csv
-  - границы предложений + сам перевод - из Sentences_Oare_FirstWord_LinNum.csv
-  - якорь - first_word_spelling, ищем последовательно по токенам документа
+Извлечение sentence-level пар по якорному слову из Sentences_Oare_FirstWord_LinNum.csv
 
-Обе стороны (текст документа и якоря) нормализуем ОДНИМ и тем же пайплайном
-перед поиском - иначе рассинхрон конвенций (ASCII/юникод цифры) даёт ложные
-"якорь не найден".
+  - полный текст транслитерации документа нормализуется normalize_for_competition() -
+    это тот же вид, что попадёт в sentence_dataset.csv и что будет применяться к
+    hidden test на инференсе. Именно ЭТОТ нормализованный текст режется на спаны
+    и сохраняется как есть.
+  - якорь (first_word_spelling) нормализуется normalize_for_matching() - расширенным
+    набором правил (+ круглые скобки, + '='), которые нужны только для того, чтобы
+    формат анкора из Sentences-файла совпал с форматом документа. Эти доп. правила
+    - no-op на самом документе (0 вхождений '(' и '=' в published_texts.csv,
+    проверено эмпирически), поэтому расхождение нормализации между двумя сторонами
+    не создаёт скрытого искажения текста документа.
 """
 from dataclasses import dataclass, field
-from normalize import normalize_transliteration
+from normalize import normalize_for_competition, normalize_for_matching
 
 
 @dataclass
@@ -30,7 +34,7 @@ def extract_sentences_for_doc(text_id: str, translit_text: str, sentence_rows: l
     """
     result = ExtractionResult()
 
-    norm_text = normalize_transliteration(translit_text)
+    norm_text = normalize_for_competition(translit_text)
     tokens = _tokenize(norm_text)
 
     rows_sorted = sorted(sentence_rows, key=lambda r: r['first_word_obj_in_text'])
@@ -43,7 +47,7 @@ def extract_sentences_for_doc(text_id: str, translit_text: str, sentence_rows: l
             result.failed_anchors.append((text_id, row['sentence_uuid'], raw_anchor, 'empty_anchor'))
             continue
 
-        anchor = normalize_transliteration(raw_anchor)
+        anchor = normalize_for_matching(raw_anchor)
 
         pos = None
         for i in range(search_from, len(tokens)):

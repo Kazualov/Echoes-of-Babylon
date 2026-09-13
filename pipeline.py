@@ -20,7 +20,7 @@ import random
 import sys
 from collections import defaultdict
 
-from normalize import normalize_transliteration, normalize_translation
+from normalize import normalize_translation
 from extract_sentences import extract_sentences_for_doc
 
 
