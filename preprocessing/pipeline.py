@@ -19,7 +19,7 @@ import csv
 import random
 from collections import defaultdict
 
-from normalize import normalize_translation
+from preprocessing.normalize import normalize_translation
 from extract_sentences import extract_sentences_for_doc
 
 

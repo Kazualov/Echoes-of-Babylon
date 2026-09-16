@@ -90,7 +90,7 @@ inference.** Skipping it leaves training and test inputs in different
 conventions, which degrades the score without raising an error.
 
 ```python
-from normalize import normalize_for_competition
+from preprocessing.normalize import normalize_for_competition
 
 clean = normalize_for_competition(row["transliteration"])
 ```

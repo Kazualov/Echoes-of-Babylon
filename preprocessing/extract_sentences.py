@@ -8,7 +8,7 @@ transliteration determines sentence boundaries and produces sentence pairs.
 """
 from dataclasses import dataclass, field
 
-from normalize import normalize_for_competition, normalize_for_matching
+from preprocessing.normalize import normalize_for_competition, normalize_for_matching
 
 
 @dataclass
