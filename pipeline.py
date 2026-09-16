@@ -1,23 +1,22 @@
 """
-Deep Past Challenge - сборка sentence-level датасета (Этап 1).
+Build the sentence-level training set for the Deep Past Challenge.
 
-Источники:
-  --train             train.csv                            (для доп. проверок, не обязателен)
-  --published         published_texts.csv                  (источник полной транслитерации)
-  --sentences         Sentences_Oare_FirstWord_LinNum.csv  (границы предложений + перевод)
+Inputs:
+    published_texts.csv                 full document transliterations
+    Sentences_Oare_FirstWord_LinNum.csv sentence translations and first words
 
-Выход:
-  sentence_dataset.csv   - text_id, sentence_id, order, transliteration, translation, split
-  extraction_report.txt  - статистика: покрытие, % найденных якорей, foreign-char находки
+Outputs:
+    sentence_dataset.csv   text_id, sentence_id, order, transliteration, translation, split
+    extraction_report.txt  coverage, anchor success rate, diagnostics
 
-Запуск:
-  python3 pipeline.py --published published_texts.csv --sentences Sentences_Oare_FirstWord_LinNum.csv \
-      --out sentence_dataset.csv --val-fraction 0.1 --seed 42
+Usage:
+    python3 pipeline.py --published published_texts.csv \
+        --sentences Sentences_Oare_FirstWord_LinNum.csv \
+        --out sentence_dataset.csv --val-fraction 0.1 --seed 42
 """
 import argparse
 import csv
 import random
-import sys
 from collections import defaultdict
 
 from normalize import normalize_translation
@@ -30,18 +29,21 @@ def load_csv(path):
 
 
 def build_dataset(published_rows, sentence_rows):
+    """Join both sources on the document id and extract sentence pairs."""
     published_by_id = {r['oare_id'].strip(): r for r in published_rows if r.get('oare_id')}
 
     sentences_by_doc = defaultdict(list)
     for r in sentence_rows:
         tid = (r.get('text_uuid') or '').strip()
-        if tid:
-            try:
-                r = dict(r)
-                r['first_word_obj_in_text'] = int(r['first_word_obj_in_text'])
-            except (ValueError, TypeError):
-                continue  # без валидного порядкового номера якорь бесполезен
-            sentences_by_doc[tid].append(r)
+        if not tid:
+            continue
+        try:
+            r = dict(r)
+            r['first_word_obj_in_text'] = int(r['first_word_obj_in_text'])
+        except (ValueError, TypeError):
+            # Rows without a valid position cannot be used for anchor ordering.
+            continue
+        sentences_by_doc[tid].append(r)
 
     usable_ids = set(published_by_id) & set(sentences_by_doc)
 
@@ -82,6 +84,11 @@ def build_dataset(published_rows, sentence_rows):
 
 
 def split_by_document(pairs, val_fraction=0.1, seed=42):
+    """Split by document so all sentences from one document stay together.
+
+    Sentence-level splitting would cause document-level data leakage and
+    inflate validation scores.
+    """
     doc_ids = sorted({p['text_id'] for p in pairs})
     rng = random.Random(seed)
     rng.shuffle(doc_ids)
@@ -121,13 +128,13 @@ def write_report(stats, all_failed, foreign_char_log, out_path):
 
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument('--published', required=True)
-    ap.add_argument('--sentences', required=True)
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--published', required=True, help='path to published_texts.csv')
+    ap.add_argument('--sentences', required=True, help='path to Sentences_Oare_FirstWord_LinNum.csv')
     ap.add_argument('--out', default='sentence_dataset.csv')
     ap.add_argument('--report', default='extraction_report.txt')
     ap.add_argument('--val-fraction', type=float, default=0.1)
-    ap.add_argument('--seed', type=int, default=42)
+    ap.add_argument('--seed', type=int, default=42, help='keep fixed for a reproducible split')
     args = ap.parse_args()
 
     published_rows = load_csv(args.published)
@@ -139,7 +146,7 @@ def main():
     write_dataset(pairs, args.out)
     write_report(stats, failed, foreign_log, args.report)
 
-    print(f"Готово. Пар: {len(pairs)}. Датасет: {args.out}. Отчёт: {args.report}")
+    print(f"Wrote {len(pairs)} pairs to {args.out} (report: {args.report})")
     for k, v in stats.items():
         print(f"  {k}: {v}")
 

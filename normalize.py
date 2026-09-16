@@ -1,187 +1,95 @@
 """
-Нормализация транслитерации и перевода для Deep Past Challenge (Akkadian -> English).
+Text normalization for the Deep Past Challenge (Old Assyrian Akkadian -> English).
 
-Все правила ниже выведены и проверены на реальных данных соревнования
-(train.csv, published_texts.csv, Sentences_Oare_FirstWord_LinNum.csv) - см.
-комментарии у каждой функции для конкретных цифр и источника.
+Two distinct normalization pipelines are exposed; they must not be confused:
 
-АРХИТЕКТУРА (важно): есть ДВА разных набора трансформаций, которые
-нельзя смешивать - см. подробный разбор issue от коллег и наш ответ.
+    normalize_for_competition(text)
+        Canonical form of a transliteration as fed to the model. Used both when
+        building the training set and at inference time on the hidden test set.
+        This is the only function that needs to be shipped to the Kaggle kernel.
 
-- normalize_for_competition() - приводит транслитерацию к единому виду
-  для ПОДАЧИ В МОДЕЛЬ. Применяется и при сборке sentence_dataset.csv
-  (train), и на инференсе к hidden test.csv. Это единственная функция,
-  которую нужно переносить в Kaggle-ноутбук.
+    normalize_for_matching(text)
+        normalize_for_competition() plus two extra rules that exist solely to
+        reconcile the anchor format of Sentences_Oare_FirstWord_LinNum.csv with
+        the document text. For internal use by extract_sentences.py only; never
+        apply it to model input.
 
-- normalize_for_matching() = normalize_for_competition() + два
-  дополнительных правила, которые нужны ТОЛЬКО чтобы first_word_spelling
-  из Sentences_Oare_FirstWord_LinNum.csv совпал с транслитерацией
-  документа при поиске якоря (extract_sentences.py). Эти правила
-  проверены эмпирически: круглые скобки (...) и '=' НИ РАЗУ не
-  встречаются в published_texts.csv (0 вхождений на весь файл) - то
-  есть они специфичны для формата Sentences-файла и не должны трогать
-  реальный вход модели. НИКОГДА не переносить normalize_for_matching()
-  на инференс - предназначена только для сопоставления двух источников
-  при сборке train-данных.
+Rules follow the organizers' Dataset Instructions where those are explicit, and
+are otherwise derived from measurements on the full competition files. Counts
+quoted in the comments refer to those measurements.
 """
 import re
 import unicodedata
 
-# ============================================================================
-# ЧАСТЬ A: normalize_for_competition() - применяется к train И hidden test
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Competition normalization
+# ---------------------------------------------------------------------------
 
-# --------------------------------------------------------------------------
-# 1. Ḫ/ḫ -> H/h
-# --------------------------------------------------------------------------
-# Подтверждено организаторами явным текстом в Dataset Instructions:
-# train (и публикации) содержат Ḫ/ḫ, test содержит только H/h.
-# Подтверждено на данных: train_20_rows.csv содержит 62x 'ḫ' и 4x 'Ḫ' в 20 строках.
+# Test data uses H/h instead of Ḫ/ḫ; normalize to H/h.
 _HA_MAP = str.maketrans({'Ḫ': 'H', 'ḫ': 'h'})
 
 
 def normalize_ha(text: str) -> str:
+    """Fold Ḫ/ḫ to H/h."""
     return text.translate(_HA_MAP)
 
 
-# --------------------------------------------------------------------------
-# 2. Юникод-подстрочная цифра -> ASCII-цифра-индекс
-# --------------------------------------------------------------------------
-# ИСПРАВЛЕНО (было наоборот в предыдущей версии - см. ниже почему).
-#
-# Официальный гайд организаторов (Dataset Instructions, секция "Replace"),
-# подтверждено скриншотом: "il₅ il5 (same for any subscripted number)" -
-# в этом списке пары идут "сырая scribal-нотация -> чистый competition
-# формат" (та же строка, что и "[x] -> <gap>", "ki (superscript) -> {ki}").
-# То есть официальное направление - ЮНИКОД-ПОДСТРОЧНЫЙ -> ASCII, а не
-# наоборот, как было в предыдущей версии этого файла.
-#
-# Это объясняет то, что раньше выглядело как "странность" published_texts.csv:
-# его колонка "transliteration" ("Clean version... based on these formatting
-# suggestions" - дословно из Dataset Description) ПОНИЖАЛА юникод-подстрочные
-# цифры до ASCII (il₅-we-da-ku -> il5-we-da-ku) - это было не отклонение от
-# конвенции, а корректное следование официальному правилу. train.csv
-# (юникод-подстрочные цифры) - по всей видимости, более старый срез
-# данных, не прогнанный через этот шаг очистки.
-_SUBSCRIPT_MAP = str.maketrans('0123456789', '₀₁₂₃₄₅₆₇₈₉')
+# Convert Unicode subscript digits to ASCII digits (e.g. il₅ -> il5).
 _SUBSCRIPT_TO_ASCII_MAP = str.maketrans('₀₁₂₃₄₅₆₇₈₉', '0123456789')
-
-# цифра сразу после буквы (латиница + акк. диакритика), без разделителя -
-# используется в subscript_to_ascii_digit ниже как раз для этого паттерна,
-# сохранена для случаев когда нужно нормализовать в обратную сторону
-# (см. subscript_to_ascii_digit)
-_DIGIT_AFTER_LETTER = re.compile(
-    r'(?<=[a-zA-ZàáâèéêìíîòóôùúûÀÁÂÈÉÊÌÍÎÒÓÔÙÚÛšŠṣṢṭṬḫḪʾ])(\d+)'
-)
-
-
-def ascii_digit_to_subscript(text: str) -> str:
-    """Оставлена как утилита для обратного направления (например, если
-    понадобится сравнение/matching с источником, который использует
-    юникод-подстрочные цифры) - НЕ используется в normalize_for_competition()."""
-    return _DIGIT_AFTER_LETTER.sub(lambda m: m.group(1).translate(_SUBSCRIPT_MAP), text)
 
 
 def subscript_to_ascii_digit(text: str) -> str:
-    """Официальное направление конвенции организаторов - используется в
-    normalize_for_competition(). Юникод-подстрочные цифры встречаются
-    ТОЛЬКО в этом контексте (индекс слога), поэтому простой translate()
-    безопасен без привязки к контексту буквы."""
+    """Convert Unicode subscript digits to ASCII digits."""
     return text.translate(_SUBSCRIPT_TO_ASCII_MAP)
 
 
-# --------------------------------------------------------------------------
-# 3. <big_gap> -> <gap>
-# --------------------------------------------------------------------------
-# Проверено пользователем на полном датасете: train.csv - 0 вхождений <big_gap>,
-# published_texts.csv - 4 вхождения ТОЛЬКО в колонке transliteration
-# (grep -c по всей строке CSV находил 4 совпадения, но они были в других
-# колонках типа note/description - не наш токен). Статистический шум внутри
-# самой транслитерации, различие не имеет практической ценности.
-#
-# Схлопывание ПОСЛЕДОВАТЕЛЬНЫХ '<gap> <gap>' в один НЕ делаем: проверено
-# эмпирически - таких случаев в published_texts.csv ровно 0 (см. скрипт
-# в обсуждении), то есть это не встречающийся в данных паттерн, а
-# гипотетическое правило без единого реального примера. Два подряд <gap>
-# могут означать два РАЗНЫХ утраченных фрагмента - схлопывание удалило бы
-# информацию без всякого практического основания.
 def unify_gaps(text: str) -> str:
+    """Normalize <big_gap> to <gap>."""
     return text.replace('<big_gap>', '<gap>')
 
 
-# --------------------------------------------------------------------------
-# 4. Нормализация "сломанных" токенов (x/xxx/…)
-# --------------------------------------------------------------------------
-# 'x', 'xxx', '…' как ОТДЕЛЬНЫЙ токен - это литеральная запись нечитаемого знака
-# (ATF-конвенция). В "чистой" транслитерации документа такой знак уже заменён на
-# <gap>, а в first_word_spelling (сыром якоре из Sentences_Oare_FirstWord_LinNum.csv)
-# он остаётся как есть.
-#
-# Правило строго ТОКЕНОВОЕ (^[xX]+$ на весь токен целиком), не расширять на
-# поиск 'x' внутри произвольного слова - иначе испортит легитимные слоги
-# вида 'xu-um' и т.п.
+# Replace standalone x/… tokens with <gap>; keep x inside valid syllables.
 _BROKEN_TOKEN = re.compile(r'^[xX]+$')
 
 
 def normalize_broken_tokens(text: str) -> str:
+    """Replace whole tokens standing for an illegible sign with <gap>."""
     tokens = text.split()
-    out = [
+    return ' '.join(
         '<gap>' if (t == '…' or _BROKEN_TOKEN.match(t)) else t
         for t in tokens
-    ]
-    return ' '.join(out)
+    )
 
 
-# --------------------------------------------------------------------------
-# 5. Остаточные scribal-нотации: '/' (line divider) и half-brackets
-# --------------------------------------------------------------------------
-# Найдено по факту на полном train.csv/published_texts.csv: из всего набора
-# "modern scribal notations" (! ? / : ˹ ˺ ⌉) organizers' собственная "чистая"
-# колонка НЕ до конца убрала именно эти два случая:
-#   - '/' (line divider) - 8 раз в published_texts.csv (clean), 0 в train.csv
-#   - '⌈'/'⌉' - по 1 разу в train.csv И в published_texts.csv (clean), визуальный
-#     вариант '˹'/'˺' (half bracket, частично повреждённый знак).
-#
-# '/' - ПРОВЕРЕНО на всех 9 реальных вхождениях с контекстом: '/' ВСЕГДА стоит
-# сразу после дефиса ('X-/Y'), 9 из 9 без исключений. Это ATF-нотация "разрыв
-# строки на табличке совпал с границей слога" - дефис уже корректно разделяет
-# слоги, сам '/' декоративный/метаданные, безопасно удалить. Раньше здесь была
-# замена на пробел "для безопасности" - это было ОШИБКОЙ: "X-/Y" -> "X- Y"
-# оставляет висящий дефис перед пробелом, что хуже отсутствия обработки.
-# Regex требует дефис перед слешем (не глобальное удаление) - если в скрытых
-# данных встретится '/' без дефиса (в нашей выборке такого не было ни разу),
-# функция его не тронет, а не будет угадывать.
+# Residual scribal notation that survived the organizers' own cleaning:
+#   '/'      line divider, 8 occurrences in published_texts.csv
+#   '⌈' '⌉'  half brackets (partially broken sign), 1 occurrence in each file
+# Every observed '/' (9 of 9) directly follows a hyphen, i.e. a tablet line
+# break that coincides with a syllable boundary; the hyphen already separates
+# the syllables, so the slash is dropped. The pattern requires the hyphen rather
+# than deleting every '/', so an unseen standalone slash is left untouched
+# instead of being guessed at.
 _HALF_BRACKETS = str.maketrans('', '', '˹˺⌈⌉')
 _SLASH_AFTER_HYPHEN = re.compile(r'-/')
 
 
 def strip_scribal_marks(text: str) -> str:
+    """Drop line dividers and half brackets, keeping the enclosed text."""
     text = _SLASH_AFTER_HYPHEN.sub('-', text)
-    text = text.translate(_HALF_BRACKETS)
-    return text
+    return text.translate(_HALF_BRACKETS)
 
 
-# --------------------------------------------------------------------------
-# 6. Округление float-артефактов в дробных числах
-# --------------------------------------------------------------------------
-# Найдено по факту (скан на полном published_texts.csv, 386 строк): часть
-# дробей записана как "1.3333300000000001" вместо "1.33333" - классический
-# IEEE754 round-trip артефакт (где-то в их пайплайне число прогнали через
-# float() и напечатали str() без форматирования). Легитимная максимальная
-# точность дробей в данных - 5 знаков после точки (0.66666), поэтому порог
-# в 6+ цифр безопасно отличает артефакт от настоящей дроби, не трогая
-# легитимные случаи вида 0.3333/0.5/12.5.
+# Round decimal artifacts with more than five fractional digits.
 _FLOAT_ARTIFACT = re.compile(r'\d+\.\d{6,}')
 
 
 def round_float_artifacts(text: str, ndigits: int = 5) -> str:
+    """Round decimals with an implausible number of places back to ndigits."""
     return _FLOAT_ARTIFACT.sub(lambda m: f"{float(m.group(0)):.{ndigits}f}", text)
 
 
-# --------------------------------------------------------------------------
-# 7. normalize_for_competition() - главная функция, для train И hidden test
-# --------------------------------------------------------------------------
 def normalize_for_competition(text: str) -> str:
+    """Canonical transliteration form for model input (training and inference)."""
     if text is None:
         return text
     text = unicodedata.normalize('NFC', text)
@@ -191,96 +99,58 @@ def normalize_for_competition(text: str) -> str:
     text = normalize_broken_tokens(text)
     text = strip_scribal_marks(text)
     text = round_float_artifacts(text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    return re.sub(r'\s+', ' ', text).strip()
 
 
-# ============================================================================
-# ЧАСТЬ B: normalize_for_matching() - ТОЛЬКО для extract_sentences.py,
-# НИКОГДА не переносить на инференс / hidden test
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Anchor matching (extract_sentences.py only)
+# ---------------------------------------------------------------------------
 
-# --------------------------------------------------------------------------
-# 8. Круглые скобки -> фигурные (только для якорей из Sentences-файла)
-# --------------------------------------------------------------------------
-# Sentences_Oare_FirstWord_LinNum.csv использует (TÚG), (d) и т.п. в
-# first_word_spelling, тогда как published_texts.csv (clean) - только
-# фигурные {TÚG}, {d}.
-#
-# ПРОВЕРЕНО ЭМПИРИЧЕСКИ (не предположение): '(...)' в published_texts.csv
-# (transliteration) - 0 вхождений на весь файл. '(...)' в
-# Sentences_Oare_FirstWord_LinNum.csv (first_word_spelling) - 80 вхождений.
-# Значит это правило специфично ИСКЛЮЧИТЕЛЬНО для формата анкоров и не
-# должно применяться к реальному входу модели - отсюда вынесено в
-# normalize_for_matching(), а не в normalize_for_competition().
+# Sentence anchors use (X) for determinatives; documents use {X}.
+# This rule is used only for anchor matching.
 _PAREN_DETERMINATIVE = re.compile(r'\(([^()]+)\)')
 
 
 def normalize_parenthetical_determinatives(text: str) -> str:
+    """Rewrite (X) determinatives as {X}."""
     return _PAREN_DETERMINATIVE.sub(r'{\1}', text)
 
 
-# --------------------------------------------------------------------------
-# 9. '=' -> '-' (только для якорей из Sentences-файла)
-# --------------------------------------------------------------------------
-# Sentences_Oare_FirstWord_LinNum.csv записывает составные имена через '='
-# (i-dí=(d)UTU) - внутренняя нотация границы леммы в OARE-базе.
-#
-# ПРОВЕРЕНО ЭМПИРИЧЕСКИ: '=' в published_texts.csv (transliteration) -
-# 0 вхождений на весь файл. Значит это тоже специфично для формата
-# анкоров, не для реального входа модели.
 def normalize_ligature_equals(text: str) -> str:
+    """Replace the '=' lemma boundary in anchors with '-'."""
     return text.replace('=', '-')
 
 
 def normalize_for_matching(text: str) -> str:
-    """Использовать ТОЛЬКО внутри extract_sentences.py для якоря
-    (first_word_spelling). Документ (полная транслитерация) нормализуется
-    через normalize_for_competition() - расхождение не страшно, т.к.
-    оба доп. правила здесь - no-op на реальном тексте документа (0
-    вхождений '(' и '=' в published_texts.csv, проверено)."""
+    """Normalize text for matching sentence anchors to document text."""
     if text is None:
         return text
     text = normalize_for_competition(text)
     text = normalize_parenthetical_determinatives(text)
     text = normalize_ligature_equals(text)
-    text = re.sub(r'\s+', ' ', text).strip()
-    return text
+    return re.sub(r'\s+', ' ', text).strip()
 
 
-# ============================================================================
-# ЧАСТЬ C: нормализация перевода (translation) - без изменений с прошлой версии
-# ============================================================================
+# ---------------------------------------------------------------------------
+# Translation normalization
+# ---------------------------------------------------------------------------
 
-# Подтверждено на train_20_rows.csv: 8/20 строк имеют непарные/висящие двойные
-# кавычки (артефакт OCR+LLM-постобработки), в одной строке (009fb838) найдена
-# буква иврита ד внутри английского текста ("ofדsilver").
-#
-# ВАЖНО: Ṣ/ṣ/š/Š/ḫ/ṭ и другие акк. диакритические буквы в переводе - это НЕ
-# мусор, это законная передача имён собственных (Ṣilli-Adad и т.п.) - не трогаем.
+# Allowed Unicode ranges cover observed Latin characters, diacritics,
+# fractions, quotation marks, dashes, and subscript characters.
+# U+00B4 is excluded and reported for manual review.
 _ALLOWED_RANGES = [
     (0x0000, 0x007F),   # ASCII
-    (0x00A0, 0x00B3),   # Latin-1 Supplement, часть 1 (до ACUTE ACCENT)
-    # 0x00B4 (´ ACUTE ACCENT) НАМЕРЕННО не включён - неоднозначный OCR-артефакт,
-    # должен репортиться для ручной проверки.
-    (0x00B5, 0x024F),   # Latin-1 Supplement часть 2 + Latin Extended A/B
-                         # (½ ¾ U+00BD/BE, диакритика имён à š ṣ ṭ ḫ ...)
+    (0x00A0, 0x00B3),   # Latin-1 Supplement, up to ACUTE ACCENT
+    (0x00B5, 0x024F),   # rest of Latin-1 Supplement + Latin Extended-A/B (½ ¾ à š ṣ ṭ)
     (0x02B0, 0x02FF),   # Spacing Modifier Letters (ʾ U+02BE)
-    (0x1E00, 0x1EFF),   # Latin Extended Additional (Ṣ, Ṭ, Ḫ и т.п.)
+    (0x1E00, 0x1EFF),   # Latin Extended Additional (Ṣ, Ṭ, Ḫ)
     (0x2013, 0x2014),   # en/em dash
-    (0x2018, 0x201F),   # типографские кавычки „ " ' ' и т.п.
-    (0x2026, 0x2026),   # …
-    (0x2044, 0x2044),   # ⁄ FRACTION SLASH
-    (0x2080, 0x2089),   # Subscript digits (в непереведённых именах, напр. Puzur₄-Aššur)
-    (0x2090, 0x209C),   # Subscript modifier letters (ₓ - неопределённый индекс знака).
-                         # ПРИМЕЧАНИЕ: официальная таблица организаторов указывает для
-                         # этого символа кодпоинт U+208A, но U+208A на самом деле -
-                         # SUBSCRIPT PLUS SIGN, не буква x. Реальный символ, который мы
-                         # находили в данных (extraction_report.txt) - U+2093 LATIN
-                         # SUBSCRIPT SMALL LETTER X, он и входит в этот диапазон.
-                         # Похоже на опечатку в их документации, не в наших данных -
-                         # ориентируемся на то, что реально встретили, а не на код из таблицы.
-    (0x2150, 0x218F),   # Number Forms (⅚ и другие vulgar fractions)
+    (0x2018, 0x201F),   # typographic quotes
+    (0x2026, 0x2026),   # ellipsis
+    (0x2044, 0x2044),   # fraction slash
+    (0x2080, 0x2089),   # subscript digits (e.g. Puzur₄-Aššur)
+    (0x2090, 0x209C),   # subscript modifier letters, incl. U+2093 ₓ
+    (0x2150, 0x218F),   # Number Forms (⅚ and similar)
 ]
 
 
@@ -290,12 +160,7 @@ def _is_allowed(ch: str) -> bool:
 
 
 def scan_foreign_chars(text: str):
-    """Возвращает список (индекс, символ, unicode-имя) для символов вне разрешённых
-    диапазонов - кандидатов на OCR-мусор. НЕ удаляет автоматически - только для
-    диагностики/ручной проверки. НЕ использовать как автоматический delete-filter:
-    часть ранее найденных символов оказалась легитимной (ʾ, ½, ¾, subscript digits
-    в непереведённых именах) - allowlist уже расширен под них, но новые находки
-    всегда нужно проверять глазами, а не удалять по умолчанию."""
+    """Return characters outside the allowed Unicode ranges."""
     found = []
     if text is None:
         return found
@@ -310,30 +175,20 @@ def scan_foreign_chars(text: str):
 
 
 def balance_quotes(text: str) -> str:
-    """Убирает непарные хвостовые/висящие двойные кавычки на конце строки.
-    Консервативный подход: трогаем только явно висящие кавычки на границах
-    строки. Одиночная (ровно одна) кавычка на хвосте считается легитимной
-    закрывающей кавычкой прямой речи и НЕ удаляется - удаляются только
-    аномальные случаи (0, 2+ кавычек подряд), не пытаемся угадывать
-    парность кавычек в середине текста."""
+    """Remove anomalous trailing OCR quotes while preserving valid quotes."""
     if text is None:
         return text
     t = text.strip()
-    t = re.sub(r'["\u201c\u201d\u201e\s]+$', lambda m: '' if m.group(0).count('"') != 1
-                else m.group(0), t)
+    t = re.sub(
+        r'["\u201c\u201d\u201e\s]+$',
+        lambda m: '' if m.group(0).count('"') != 1 else m.group(0),
+        t,
+    )
     return t.strip()
 
 
 def normalize_translation(text: str):
-    """Возвращает (очищенный_текст, список_найденных_чужеродных_символов).
-    Чужеродные символы НЕ удаляются автоматически - только репортятся.
-
-    NBSP (\\xa0) - исключение: заменяется на обычный пробел сразу, не репортится
-    как "foreign".
-
-    NFC-нормализация применяется первым делом: часть переводов хранит
-    диакритику в NFD-форме (буква + отдельный комбинирующий знак) - юникод-
-    каноникализация схлопывает их в одно."""
+    """Clean a translation and return detected foreign characters."""
     if text is None:
         return text, []
     text = unicodedata.normalize('NFC', text)
