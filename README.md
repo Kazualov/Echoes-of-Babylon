@@ -1,4 +1,4 @@
-**Deep Past Initiative: Machine Translation (Old Assyrian to English)**
+# Deep Past Initiative: Machine Translation (Old Assyrian to English)
 
 This repository contains the solution and research report for the [Deep Past Initiative Machine Translation](https://www.kaggle.com/competitions/deep-past-initiative-machine-translation/overview) competition.
 
@@ -142,16 +142,8 @@ The repository includes a separate pipeline for sentence-level dataset preparati
 
 *Note*: The prepared sentence-level dataset **was not used** for training in the current final submission, as development could not be completed within the current cycle. Training on this dataset is planned as future work. For details, see README\_dataset.md.
 
-## **⚠️ Limitations and Future Work**
+---
 
-### **Limitations**
+_Thank you for reading & Enjoy!_
 
-* **Low-Resource Domain**: Small parallel corpus size. Training was conducted at the document level, while evaluation is performed at the sentence level.
-
-* **Under-trained LLM**: Qwen2.5-7B-Instruct was trained for only 2 epochs due to time constraints.
-
-* **Fixed Hyperparameters**: No systematic hyperparameter search was conducted (learning rate, batch size, warmup schedule).
-
-* **Lack of Cross-Validation**: Evaluation was performed on a single validation split.
-
-* **Automatic Metrics**: BLEU and chrF++ do not always fully reflect translation adequacy for an ancient language.
+w.w.
