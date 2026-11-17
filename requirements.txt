@@ -1,0 +1,8 @@
+# Local tools only (tools/*.py, tests/). The notebooks run on Kaggle images;
+# the exact package versions of every run are written to results/env_*.json.
+pandas>=2.2
+numpy>=1.26
+matplotlib>=3.8
+# Only for tests/test_metrics.py (checks common/metrics.py against the reference implementation):
+sacrebleu==2.6.0
+pytest>=8

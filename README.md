@@ -1,149 +1,130 @@
-# Deep Past Initiative: Machine Translation (Old Assyrian to English)
+# Deep Past Initiative: Machine Translation (Old Assyrian → English)
 
-This repository contains the solution and research report for the [Deep Past Initiative Machine Translation](https://www.kaggle.com/competitions/deep-past-initiative-machine-translation/overview) competition.
+Solution and research code for the [Deep Past Initiative Machine Translation](https://www.kaggle.com/competitions/deep-past-initiative-machine-translation/overview) competition: three fine-tuned translators (mBART-50, ByT5-small, Qwen2.5-7B with QLoRA) and a Minimum Bayes Risk (MBR) ensemble of the three.
 
-**IMPORTANT REQUIREMENT**: All notebooks in this project **MUST** be run exclusively in the **Kaggle Environment**(Kaggle Notebooks) with GPU support.
+All notebooks run in **Kaggle Notebooks** with a GPU. The helper scripts in `tools/` run on any machine with Python ≥ 3.10.
 
-## **🎯 Task and Data Description**
+## Task, data and metric
 
-The task consists of developing a machine translation system to convert transliterated Old Assyrian cuneiform texts into modern English.
+- **Task:** translate transliterated Old Assyrian cuneiform documents (mostly merchant letters and contracts) into English. The language is low-resource and morphologically rich. The texts contain scribal notation, determinatives and damaged passages (`<gap>`).
+- **Data:** competition `train.csv` with 1,561 documents (`oare_id`, `transliteration`, `translation`) and `test.csv`.
+- **Metric:** the competition score is the geometric mean (GM) of corpus BLEU and corpus chrF++. Every number in this repository is computed by `common/metrics.py`. It is a dependency-free port of sacreBLEU 2.x (`BLEU()` with the 13a tokenizer and `CHRF(word_order=2)`), and `tests/test_metrics.py` checks that it returns exactly the same scores as sacreBLEU.
 
-Old Assyrian belongs to the morphologically rich Semitic language family and is a low-resource language. The texts primarily consist of administrative and commercial records from Assyrian merchants.
+## Evaluation protocol (shared by all models)
 
-The system must handle noisy transliterations, scribal notations, damaged text fragments, and determinatives.
+| What | How | Where |
+|---|---|---|
+| Validation split | 10% of **documents**: sorted `oare_id`s shuffled with `random.Random(42)`, giving 156 documents. Every notebook checks the SHA-256 of the sorted ids and stops if it differs. | `common/split.py`, `data/val_ids.csv` |
+| Metric | sacreBLEU-identical BLEU + chrF++ (char 6-grams + word 2-grams), GM = √(BLEU·chrF++) | `common/metrics.py` |
+| Reported score | Computed **after** training, on the best checkpoint, against the full (untruncated) reference translations | `finalize_run` in `common/runlog.py` |
+| Checkpoint selection | Validation GM after every epoch, greedy decoding (mBART, ByT5). Qwen uses validation loss, because generating 156 documents with a 7B model every epoch is too slow. | training notebooks |
+| Seeds | mBART and ByT5: seeds 42, 43, 44. Qwen: seed 42 (one 7B run). Results are reported as mean ± std. | `SEED` in each notebook |
+| Uncertainty | 95% bootstrap CI over validation documents (1,000 resamples) and a paired bootstrap test against the best system | `tools/evaluate_all.py` |
+| Run record | One `preds_val_<system>__seed<k>.csv` and one `run_<system>__seed<k>.json` per trained model (hyperparameters, split checksum, metric, per-epoch log), plus `env_<notebook>.json` with package versions and GPU | `results/` |
 
-* **Data Source**: Deep Past Initiative parallel corpus containing over 8,000 texts with metadata.
+The shared code lives in `common/`. Kaggle notebooks cannot import from the repository, so each notebook contains verbatim copies of these modules in cells marked `# >>> SHARED CELL`. `python tools/sync_shared_cells.py --check` verifies that the copies are identical to `common/`.
 
-* **Data Characteristic**: Training data is provided at the document level, whereas quality evaluation is performed at the sentence level.
+### Length limits
 
-## **📐 Evaluation Metric**
+Each model's limits are set so that at least 95% of training documents fit without truncation. The limits are measured with that model's own tokenizer:
 
-Translation quality is evaluated using two metrics:
+| Model | Unit | Source (p95) | Target (p95) | Limits used |
+|---|---|---:|---:|---|
+| mBART-50 | sentencepiece tokens | 568 | 413 | source 576, target 448 |
+| ByT5-small | UTF-8 bytes | 1,024 | 1,384 | source 1,024, target 1,408 |
+| Qwen2.5-7B | Qwen tokens | 543 | 419 | prompt + source + target 1,024, new tokens 448 |
 
-1. **BLEU** — evaluates word-level accuracy.
+## Repository layout
 
-2. **chrF++** — evaluates character/n-gram level similarity, which is critical for morphologically complex languages.
+```
+mbart50.ipynb               mBART-50 fine-tuning, validation, test inference
+byte-level-seq2seq.ipynb    ByT5-small fine-tuning (+ ByT5-only MBR ensemble), validation, test inference
+pipeline_QwenQLoRa.ipynb    Qwen2.5-7B-Instruct QLoRA fine-tuning and validation
+ensemble-pipeline.ipynb     3-model MBR ensemble (offline), validation and submission.csv
+common/                     shared split, metric, run record, environment report
+tools/evaluate_all.py       one table for all runs: mean ± std over seeds, bootstrap CIs, paired tests
+tools/analyze_runs.py       experiment registry, training curves, error analysis
+tools/sync_shared_cells.py  copies common/*.py into the notebooks (or checks them with --check)
+tests/test_metrics.py       metric parity with sacreBLEU
+data/val_ids.csv            the 156 shared validation documents
+results/                    run records produced by the notebooks (input for the tools)
+preprocessing/              sentence-level dataset pipeline (not used for the reported models)
+legacy/                     early Qwen CLI scripts (not used for any reported result)
+```
 
-The final score is calculated as the **Geometric Mean** of micro-averaged BLEU and chrF++ across the entire corpus.
+## Reproducing the results
 
-Because the geometric mean is used, the model must achieve high scores on both metrics simultaneously: poor performance on one metric cannot be offset by a high score on the other.
+### Kaggle inputs
 
-## **💻 Environment and Resource Requirements**
+| Resource | Kaggle link | Needed by |
+|---|---|---|
+| Competition data | [deep-past-initiative-machine-translation](https://www.kaggle.com/competitions/deep-past-initiative-machine-translation) | all notebooks |
+| mBART-50 base weights (third party) | [facebookmbart-large-50-many-to-many-mmt](https://www.kaggle.com/models/nensipansuriya1311/facebookmbart-large-50-many-to-many-mmt) | `mbart50.ipynb` (offline mode) |
+| Qwen2.5-7B-Instruct base | [eeee13/qwen2.5-7b-instruct](https://www.kaggle.com/models/eeee13/qwen2.5-7b-instruct), variation `base-v1` | `ensemble-pipeline.ipynb` |
+| Fine-tuned mBART | [eeee13/akkadian-mbart](https://www.kaggle.com/models/eeee13/akkadian-mbart), variation `mbart50-seed42` | `ensemble-pipeline.ipynb` |
+| Fine-tuned ByT5 | [eeee13/akkadian-byt5](https://www.kaggle.com/models/eeee13/akkadian-byt5), variation `byt5-seed42` | `ensemble-pipeline.ipynb` |
+| Qwen LoRA adapter | [eeee13/akkadika](https://www.kaggle.com/models/eeee13/akkadika), variation `qwen-lora-seed42` | `ensemble-pipeline.ipynb` |
+| bitsandbytes wheel | [eeee13/bitsandbytes](https://www.kaggle.com/datasets/eeee13/bitsandbytes) | `ensemble-pipeline.ipynb` (offline install) |
 
-All runs **MUST** be executed in **Kaggle Notebooks**.
+The fine-tuned weights are published. The ensemble can therefore be reproduced without retraining anything, and every training notebook can be rerun from scratch.
 
-* **Accelerator (GPU)**: NVIDIA Tesla T4 x2 or P100 (minimum 16 GB VRAM).
+### Settings common to all notebooks
 
-* **Python Runtime**: Python 3.12+ with CUDA-enabled PyTorch.
+- Accelerator: **GPU T4 ×2** or **P100** (≥ 16 GB VRAM).
+- Environment: Kaggle's default Python image. The versions actually used are recorded in `results/env_<notebook>.json`. For an exact rerun, select *Settings → Environment → Pin to original environment*.
+- Default flags never read Kaggle Secrets and never upload anything: `USE_TRACKING = False`, `PUBLISH_MODELS = False` (and `EXECUTION_MODE = "offline"` in the mBART and ensemble notebooks).
+- Outputs: each notebook writes `results/` into `/kaggle/working/`. Download it from the *Output* tab.
 
-* **Internet Toggle**:
+### 1. `mbart50.ipynb` (about 1–1.5 h per seed on a T4)
 
-  * **OFF**: During final evaluation and submission in offline mode (mbart50.ipynb, ensemble-pipeline.ipynb) to simulate Kaggle evaluation conditions.
+1. Attach the competition data and the third-party mBART-50 base weights. Set Internet **OFF** (offline mode loads the base model from the attached input).
+2. Keep `EXECUTION_MODE = "offline"` and set `SEED` (42, then 43, then 44).
+3. *Run All*. Outputs: `results/preds_val_mbart50__seed<k>.csv`, `results/run_mbart50__seed<k>.json`, `results/env_mbart50.json`, the model in `mbart50-model/` and `submission.csv`.
 
-## **📁 Datasets and Models to Attach in Kaggle**
+### 2. `byte-level-seq2seq.ipynb` (about 3–4 h for seed 42, about 2 h for each of seeds 43 and 44)
 
-Before running the notebooks, attach the following resources via the right panel in Kaggle (+ Add Input):
+1. Attach the competition data. Set Internet **ON** (downloads `google/byt5-small`).
+2. Keep `USE_TRACKING = False` and set `SEED`. Seed 42 trains the baseline (`byt5`, full training split) and one extra member (`byt5-member2`, 85% bootstrap subset) for the ByT5-only MBR ensemble. Seeds 43 and 44 train only the baseline.
+3. *Run All*. Outputs: `results/preds_val_byt5__seed<k>.csv` (plus `byt5-member2` and `byt5-mbr` for seed 42), the run records, the weights in `outputs/final_model_*` and `submission.csv`.
 
-| Resource / Model | Link / Name | Mount Path in Kaggle | Purpose |
-| :---- | :---- | :---- | :---- |
-| **Competition Data** | [Deep Past Initiative Competition](https://www.kaggle.com/competitions/deep-past-initiative-machine-translation) | /kaggle/input/competitions/deep-past-initiative-machine-translation/ | Competition dataset (train.csv, test.csv).  |
-| **3rd-Party mBART-50 Base** | [facebookmbart-large-50-many-to-many-mmt](https://www.kaggle.com/models/nensipansuriya1311/facebookmbart-large-50-many-to-many-mmt) | /kaggle/input/models/nensipansuriya1311/facebookmbart-large-50-many-to-many-mmt/pytorch/default/1 | Pre-downloaded mBART-50 base weights for offline loading.  |
-| **Fine-tuned mBART (Ours)** | [akkadian-mbart](https://www.kaggle.com/models/eeee13/akkadian-mbart) | /kaggle/input/models/eeee13/akkadian-mbart/pytorch/subword-seq2seq-v1/1 | Fine-tuned mBART model.  |
-| **Qwen2.5-7B Base** | [qwen2.5-7b-instruct](https://www.kaggle.com/models/eeee13/qwen2.5-7b-instruct) | /kaggle/input/models/eeee13/qwen2.5-7b-instruct/pytorch/base-v1/1 | Base Qwen2.5-7B model.  |
-| **Qwen Adapter (LoRA)** | [akkadika](https://www.kaggle.com/models/eeee13/akkadika) | /kaggle/input/models/eeee13/akkadika/pytorch/adapter-v1/1 | LoRA adapter for Qwen.  |
-| **ByT5 (Fine-tuned)** | akkadian-byt5 | /kaggle/input/models/eeee13/akkadian-byt5/pytorch/byt5-akkadian-v4/1 | Fine-tuned ByT5 model.  |
-| **Bitsandbytes Offline** | [bitsandbytes](https://www.kaggle.com/datasets/eeee13/bitsandbytes) | /kaggle/input/datasets/eeee13/bitsandbytes | Offline bitsandbytes package for installation without internet.  |
+### 3. `pipeline_QwenQLoRa.ipynb` (several hours on a T4)
 
-**Note on ByT5 (Fine-tuned)**: Unfortunately, the fine-tuned ByT5 model is not pre-attached. You will need to train ByT5 using byte-level-seq2seq.ipynb first, and then manually upload and attach the trained model weights to your notebook environment.
+1. Attach the competition data. Set Internet **ON** (downloads `Qwen/Qwen2.5-7B-Instruct`).
+2. Keep `USE_TRACKING = False`. *Run All*. Outputs: `results/preds_val_qwen2.5-7b-lora__seed42.csv`, the run record, and the adapter in `outputs/qwen2.5-7b-lora/`.
 
-## **🚀 Step-by-Step Instructions for Running Notebooks**
+### 4. `ensemble-pipeline.ipynb` (offline, about 1 h)
 
-All notebooks must be run in the **Kaggle Environment**.
+1. Attach every resource in the table above (the competition data, the Qwen base model, the three fine-tuned members and the bitsandbytes wheel). Set Internet **OFF**.
+2. Check that the paths in cell *“Local Kaggle input paths”* match the *Input* panel (the version number may differ).
+3. *Run All*. Outputs: `submission.csv`, `ensemble_candidates_debug.csv`, and run records for every member and for `mbr3-ensemble`.
 
-### **1\. pipeline\_QwenQLoRa.ipynb**
+### 5. Results table, figures and error analysis (local, a few minutes)
 
-*Purpose*: Training and fine-tuning Qwen2.5-7B using QLoRA.
+Collect every notebook's `results/` folder into the repository's `results/` folder, then run:
 
-1. Open the notebook in Kaggle, enable **GPU Accelerator**.
+```bash
+pip install -r requirements.txt
+python tools/evaluate_all.py results/preds_val_*.csv --out results
+python tools/analyze_runs.py --results results
+python -m pytest tests/
+python tools/sync_shared_cells.py --check
+```
 
-2. Attach the competition dataset at:
+`train.csv` (the competition file) must be in the repository root.
 
-   /kaggle/input/competitions/deep-past-initiative-machine-translation.
+| Output | Content |
+|---|---|
+| `results/summary.md` | Main comparison: BLEU, chrF++, GM mean ± std over seeds, 95% bootstrap CI |
+| `results/paired_tests.csv` | Paired bootstrap of every system against the best one |
+| `results/experiment_registry.md` | One row per run: notebook, seed, hyperparameters, best epoch, scores, run record file |
+| `results/figures/curves_*.png` | Training loss and validation GM per epoch |
+| `results/error_analysis.md` | GM by document length and damage, number and name recall, length ratio, worst examples |
 
-3. Configure the USE\_TRACKING parameter at the beginning of the notebook:
+### Optional: tracking and publishing
 
-   * **USE\_TRACKING \= False** *(Default recommended option)*:
+- `USE_TRACKING = True` logs runs to MLflow/DagsHub and pushes to the Hugging Face Hub. It reads `HF_TOKEN`, `MLFLOW_USERNAME`, `MLFLOW_PASSWORD`, `MLFLOW_TRACKING_URI` (and `HF_REPO_NAME` for mBART) from Kaggle Secrets.
+- `PUBLISH_MODELS = True` uploads the trained weights to Kaggle Models under `KAGGLE_USERNAME` (Internet ON). The ensemble expects the variations `mbart50-seed42`, `byt5-seed42` and `qwen-lora-seed42`.
 
-     * Does NOT read Kaggle Secrets.
+## Data preparation pipeline (not used by the reported models)
 
-     * Does NOT require connection to external tracking platforms.
-
-     * Does NOT upload the adapter to external model hubs.
-
-     * Saves the LoRA adapter locally in the Kaggle directory.
-
-   * **USE\_TRACKING \= True**:
-
-     * Reads Kaggle Secrets, connects to tracking systems, and uploads the adapter to external platforms.
-
-4. Click **Run All** to start training.
-
-### **2\. byte-level-seq2seq.ipynb**
-
-*Purpose*: Training ByT5-small and generating predictions.
-
-1. Launch the Kaggle Notebook with **GPU** enabled (P100 or T4, $\\ge16$ GB VRAM) and **Internet \= ON**.
-
-2. Attach the Deep Past Initiative Machine Translation dataset.
-
-3. Execute the notebook top-to-bottom. Execution time: \~45–60 minutes per ByT5-small run on a GPU P100.
-
-4. *Output files*: preds\_val\_\*.csv, preds\_test\_\*.csv, and ensemble files.
-
-**Important**: Unfortunately, you will need to train ByT5 using this notebook first, and then manually add the trained model weights to the inference notebook.
-
-### **3\. mbart50.ipynb**
-
-*Purpose*: Offline evaluation and inference for mBART-50.
-
-1. Enable **GPU**. Set **Internet \= OFF** (to simulate Kaggle Submission conditions).
-
-2. Attach the competition dataset and the 3rd-Party mBART-50 Base model weights (see the attached resources table).
-
-3. In **Cell 2**, ensure EXECUTION\_MODE is explicitly set to:
-
-   EXECUTION\_MODE \= "offline"
-
-4. Click **Run All**.
-
-### **4\. ensemble-pipeline.ipynb (Final Inference)**
-
-*Purpose*: Final inference pipeline in fully offline mode.
-
-1. Enable **GPU** (GPU T4 x2 or P100). Set **Internet \= OFF**.
-
-2. Attach **all 4 models** (make sure you have manually trained and attached the fine-tuned ByT5 model) and the offline **bitsandbytes** package (see the attached resources table).
-
-3. Verify that all required resources are present in the Input panel on the right.
-
-4. Click **Run All**. Cell \#6 will perform an offline package installation from /kaggle/input/datasets/eeee13/bitsandbytes.
-
-## **🛠️ Data Preparation Pipeline**
-
-The repository includes a separate pipeline for sentence-level dataset preparation:
-
-* Normalizes transliterations and translations.
-
-* Extracts sentence-level pairs from published document transliterations.
-
-* Assigns documents to train/validation splits.
-
-* Generates the resulting dataset and an extraction report.
-
-*Note*: The prepared sentence-level dataset **was not used** for training in the current final submission, as development could not be completed within the current cycle. Training on this dataset is planned as future work. For details, see README\_dataset.md.
-
----
-
-_Thank you for reading & Enjoy!_
-
-w.w.
+`preprocessing/` normalizes transliterations, extracts sentence-level pairs from the published documents and writes a sentence-level dataset (see `preprocessing/README_dataset.md`). The reported models are trained on the raw document-level `train.csv`. The sentence-level data is future work.
