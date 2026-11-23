@@ -15,26 +15,27 @@
 | 1 | `mbart50.ipynb` | `SEED = 42`, `PUBLISH_MODELS = True` | ON | ~1–1.5 ч | `results/` |
 | 2 | `mbart50.ipynb` | `SEED = 43` | OFF | ~1–1.5 ч | `results/` |
 | 3 | `mbart50.ipynb` | `SEED = 44` | OFF | ~1–1.5 ч | `results/` |
-| 4 | `byte-level-seq2seq.ipynb` | `SEED = 42`, `PUBLISH_MODELS = True` | ON | ~4–6 ч | `results/` |
-| 5 | `byte-level-seq2seq.ipynb` | `SEED = 43` | ON | ~2–3 ч | `results/` |
-| 6 | `byte-level-seq2seq.ipynb` | `SEED = 44` | ON | ~2–3 ч | `results/` |
+| 4 | `byte-level-seq2seq.ipynb` | `EXECUTION_MODE = "offline"`, `SEED = 42`, `PUBLISH_MODELS = False` | OFF | ~4–6 ч | `results/` |
+| 5 | `byte-level-seq2seq.ipynb` | `EXECUTION_MODE = "offline"`, `SEED = 43` | OFF | ~2–3 ч | `results/` |
+| 6 | `byte-level-seq2seq.ipynb` | `EXECUTION_MODE = "offline"`, `SEED = 44` | OFF | ~2–3 ч | `results/` |
 | 7 | `pipeline_QwenQLoRa.ipynb` | в последней ячейке `PUBLISH_MODELS = True` | ON | ~4–8 ч | `results/` |
 | 8 | `ensemble-pipeline.ipynb` | см. раздел 2 | OFF | ~1–2 ч | `results/`, `submission.csv` |
 
 Входные данные:
 - везде: соревновательный датасет (*Add Input → Competitions → deep-past-initiative-machine-translation*);
-- для mBART дополнительно: модель `nensipansuriya1311/facebookmbart-large-50-many-to-many-mmt`.
+- для mBART дополнительно: модель `nensipansuriya1311/facebookmbart-large-50-many-to-many-mmt`;
+- для ByT5 дополнительно: предобученные веса `google/byt5-small` как Kaggle Model или Dataset input. В `byte-level-seq2seq.ipynb` проверьте `BASE_MODEL_OFFLINE_PATH` (ожидаемый default: `/kaggle/input/models/google/byt5-small/pytorch/default/1`). Если путь отличается, замените его по панели Input. При одном ByT5 input ноутбук также попробует найти его автоматически.
 
 Что важно не перепутать:
 - `USE_TRACKING` оставляйте `False`, тогда Secrets не нужны. `True` включайте, только если хотите логировать в MLflow; тогда нужны Secrets из README.
-- `EXECUTION_MODE` в mBART оставьте `"offline"`. Базовая модель берётся из Input, и это работает даже при включённом интернете (интернет в прогоне 1 нужен только для загрузки весов).
+- `EXECUTION_MODE` в mBART и ByT5 оставьте `"offline"`. Базовые модели берутся из Kaggle Input. Offline ByT5 пропускает установку пакетов и не импортирует MLflow/Hugging Face login, если `USE_TRACKING=False`. Чтобы опубликовать обученные веса, публикация опциональна и требует Internet. Для неё установите `EXECUTION_MODE="online"`, `PUBLISH_MODELS=True` в конфигурации и запустите ячейку публикации, пока сохранённые `outputs/final_model_*` доступны в сессии; либо загрузите скачанную папку `final_model_1` на Kaggle Models вручную.
 - В начале выполнения ноутбук печатает строку `[shared split] train=1405 rows, val=156 rows (156 documents) ...`. Если вместо неё ошибка `Validation split differs`, значит подключён не тот `train.csv`. Не продолжайте прогон.
 - Если ByT5 падает с CUDA OOM: в `MODEL_CONFIGS` поставьте `"batch_size": 1, "grad_accum": 8` (эффективный батч останется 8). Если и это не помогает, уменьшите `MAX_TARGET_LEN` до 1024. Об изменении обязательно напишите мне: оно должно попасть в отчёт. Для mBART при OOM аналогично `per_device_train_batch_size=1`, `gradient_accumulation_steps=8`.
 - Из каждого прогона скачивайте папку `results/` целиком. Имена файлов уникальные (`__seed<k>`), поэтому всё можно складывать в одну папку.
 
 ## 2. Ансамбль (после прогонов 1, 4 и 7)
 
-1. Прогоны 1, 4 и 7 с `PUBLISH_MODELS = True` создают модели на Kaggle с такими вариациями:
+1. Прогоны mBART и Qwen публикуют модели при `PUBLISH_MODELS = True`. Для ByT5 сначала завершите offline-обучение и убедитесь, что веса сохранены в `outputs/final_model_1/`; затем включите Internet, переключите `EXECUTION_MODE = "online"`, `PUBLISH_MODELS = True` и выполните publishing-ячейку, пока каталог с весами доступен в сессии. Если Kaggle перезапустил сессию при переключении сети, загрузите скачанный `outputs/final_model_1/` в Kaggle Models вручную. Это создаст вариацию ByT5 на Kaggle:
    - `akkadian-mbart/pytorch/mbart50-seed42`
    - `akkadian-byt5/pytorch/byt5-seed42`
    - `akkadika/pytorch/qwen-lora-seed42`
