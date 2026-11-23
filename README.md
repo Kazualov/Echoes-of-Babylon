@@ -60,7 +60,7 @@ legacy/                     early Qwen CLI scripts (not used for any reported re
 |---|---|---|
 | Competition data | [deep-past-initiative-machine-translation](https://www.kaggle.com/competitions/deep-past-initiative-machine-translation) | all notebooks |
 | mBART-50 base weights (third party) | [facebookmbart-large-50-many-to-many-mmt](https://www.kaggle.com/models/nensipansuriya1311/facebookmbart-large-50-many-to-many-mmt) | `mbart50.ipynb` (offline mode) |
-| ByT5-small pretrained base weights | Attach the pretrained `google/byt5-small` checkpoint as a Kaggle Model or Dataset input; set `BASE_MODEL_OFFLINE_PATH` if its mount differs | `byte-level-seq2seq.ipynb` (offline mode) |
+| ByT5-small pretrained base weights | Add the saved output of [nikhilsatani/byt5-small](https://www.kaggle.com/code/nikhilsatani/byt5-small/notebook) using Kaggle **Add Input → Notebooks**; the notebook auto-detects the checkpoint, or set `BASE_MODEL_OFFLINE_PATH` | `byte-level-seq2seq.ipynb` (offline mode) |
 | Qwen2.5-7B-Instruct base | [eeee13/qwen2.5-7b-instruct](https://www.kaggle.com/models/eeee13/qwen2.5-7b-instruct), variation `base-v1` | `ensemble-pipeline.ipynb` |
 | Fine-tuned mBART | [eeee13/akkadian-mbart](https://www.kaggle.com/models/eeee13/akkadian-mbart), variation `mbart50-seed42` | `ensemble-pipeline.ipynb` |
 | Fine-tuned ByT5 | [eeee13/akkadian-byt5](https://www.kaggle.com/models/eeee13/akkadian-byt5), variation `byt5-seed42` | `ensemble-pipeline.ipynb` |
@@ -84,7 +84,7 @@ The fine-tuned weights are published. The ensemble can therefore be reproduced w
 
 ### 2. `byte-level-seq2seq.ipynb` (about 3–4 h for seed 42, about 2 h for each of seeds 43 and 44)
 
-1. Attach the competition data and the pretrained `google/byt5-small` checkpoint as a Kaggle Model or Dataset input. Keep Internet **OFF** and `EXECUTION_MODE = "offline"`; set `BASE_MODEL_OFFLINE_PATH` only if the mounted path differs from the default (the notebook can auto-detect one attached ByT5 checkpoint). The offline run skips pip, secrets, tracking, Hub calls and downloads.
+1. Attach the competition data and add the saved output of [nikhilsatani/byt5-small](https://www.kaggle.com/code/nikhilsatani/byt5-small/notebook) via Kaggle **Add Input → Notebooks**. Choose a version whose outputs contain the pretrained ByT5 checkpoint. Keep Internet **OFF** and `EXECUTION_MODE = "offline"`; the notebook scans `/kaggle/input` and auto-detects one checkpoint. If more than one is attached, set `BASE_MODEL_OFFLINE_PATH` to the checkpoint folder. The offline run skips pip, secrets, tracking, Hub calls and downloads.
 2. Keep `USE_TRACKING = False`, `PUBLISH_MODELS = False`, and set `SEED`. Seed 42 trains the baseline (`byt5`, full training split) and one extra member (`byt5-member2`, 85% bootstrap subset) for the ByT5-only MBR ensemble. Seeds 43 and 44 train only the baseline.
 3. *Run All*. If you later need to publish weights, enable Internet and set `EXECUTION_MODE = "online"`, `PUBLISH_MODELS = True`, then run the final publishing cell. Outputs: `results/preds_val_byt5__seed<k>.csv` (plus `byt5-member2` and `byt5-mbr` for seed 42), the run records, the weights in `outputs/final_model_*` and `submission.csv`.
 

@@ -24,7 +24,7 @@
 Входные данные:
 - везде: соревновательный датасет (*Add Input → Competitions → deep-past-initiative-machine-translation*);
 - для mBART дополнительно: модель `nensipansuriya1311/facebookmbart-large-50-many-to-many-mmt`;
-- для ByT5 дополнительно: предобученные веса `google/byt5-small` как Kaggle Model или Dataset input. В `byte-level-seq2seq.ipynb` проверьте `BASE_MODEL_OFFLINE_PATH` (ожидаемый default: `/kaggle/input/models/google/byt5-small/pytorch/default/1`). Если путь отличается, замените его по панели Input. При одном ByT5 input ноутбук также попробует найти его автоматически.
+- для ByT5 дополнительно: добавить сохранённый output [nikhilsatani/byt5-small](https://www.kaggle.com/code/nikhilsatani/byt5-small/notebook) через **Add Input → Notebooks**. Выбранная версия должна содержать файлы базовой модели. Ноутбук автоматически ищет ByT5 checkpoint в `/kaggle/input`; если найдено несколько, задайте `BASE_MODEL_OFFLINE_PATH` в `byte-level-seq2seq.ipynb`.
 
 Что важно не перепутать:
 - `USE_TRACKING` оставляйте `False`, тогда Secrets не нужны. `True` включайте, только если хотите логировать в MLflow; тогда нужны Secrets из README.
