@@ -218,7 +218,7 @@ Table~\ref{tab:provenance} links every reported row to the notebook, run record 
     \end{tabular}
 \end{table}
 
-The Qwen result comes from a run in which the first generation call failed (missing autocast); the predictions were then generated in the same session with autocast. The executed notebook is kept in \path{legacy/executed/}. The submitted notebook contains the fix but has not been rerun end to end.
+The Qwen result comes from a run in which the first generation call failed (missing autocast); the predictions were then generated in the same session with autocast. The executed notebook is kept in \path{legacy/executed/}. The submitted notebook contains the fix and completed a short smoke test on Kaggle: it ran to the end without errors with heavily shortened training and generation. The full training was not repeated, so the reported score is that of the recorded run.
 
 \subsection{Error analysis}
 Produced by \path{tools/analyze_runs.py} (\path{results/error_analysis.md}). Documents are split into terciles by source length; \emph{damaged} documents contain gap or \texttt{x} markers. Number and name recall are string-based heuristics.

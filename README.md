@@ -105,7 +105,7 @@ It runs on the current Kaggle image (the Phase 1 argument `group_by_length`, rem
 2. Keep `USE_TRACKING = False` and `PUBLISH_MODELS = False`. *Run All*.
 3. Outputs: `results/preds_val_qwen2.5-7b-lora__seed42.csv`, the run record, and the adapter in `outputs/qwen2.5-7b-lora/`.
 
-In the recorded run generation first failed because it ran outside autocast; the same process then generated the validation predictions inside autocast. The notebook now contains that fix in `generate_predictions`; the training code is unchanged and **the fixed notebook has not been rerun end to end**. The executed original is kept in `legacy/executed/`. The recorded run used two GPUs (44 steps per epoch, effective batch 32).
+In the recorded run generation first failed because it ran outside autocast; the same process then generated the validation predictions inside autocast. The notebook now contains that fix in `generate_predictions`; the training code is unchanged and the fixed notebook completed a short smoke test on Kaggle: it ran to the end without errors with heavily shortened training and generation. **The full training was not repeated**, so the reported scores come from the recorded run. The executed original is kept in `legacy/executed/`. The recorded run used two GPUs (44 steps per epoch, effective batch 32).
 
 ### 4. `ensemble-pipeline.ipynb` (not executed in Phase 2)
 

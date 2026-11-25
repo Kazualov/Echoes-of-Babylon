@@ -60,7 +60,7 @@ README & Rewritten: inputs, settings, recorded times, outputs, and what is not p
 \end{tabular}
 \end{center}
 
-\textbf{Remaining limits.} The Phase 2 weights are kept by the team but are not part of the archive because of their size (mBART 2.4 GB, ByT5 1.2 GB per model, Qwen adapter 0.16 GB) and are not published. Retraining instructions are in the README. The validation results can be recomputed from \texttt{results/} without weights or a GPU. The corrected Qwen notebook and the Phase 2 ensemble notebook were not rerun end to end. The Phase 1 ensemble with its published weights is kept in \texttt{legacy/phase1/}.
+\textbf{Remaining limits.} The Phase 2 weights are kept by the team but are not part of the archive because of their size (mBART 2.4 GB, ByT5 1.2 GB per model, Qwen adapter 0.16 GB) and are not published. Retraining instructions are in the README. The validation results can be recomputed from \texttt{results/} without weights or a GPU. The corrected Qwen notebook completed a short smoke test on Kaggle (to the end without errors, with heavily shortened training and generation); its full training was not repeated, so the reported scores come from the recorded run. The Phase 2 ensemble notebook was not executed. The Phase 1 ensemble with its published weights is kept in \texttt{legacy/phase1/}.
 
 \section{W3 --- Quality of the report (Major)}
 \textbf{Confirmed weakness.} The report did not show which submitted training setup produced each main result.
