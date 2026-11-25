@@ -1,0 +1,353 @@
+\documentclass[a4paper,12pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[left=3cm, right=1.5cm, top=2cm, bottom=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{amsmath, amssymb}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+\usepackage{setspace}
+\onehalfspacing
+
+% All reported numbers are macros written by tools/report_numbers.py from results/.
+
+\title{Deep Past Challenge --- Translate Akkadian to English\\[4pt]\large Phase 2 report}
+\author{Team Yellow Duck Studio}
+\date{}
+
+\emergencystretch=3em
+\setlength{\belowcaptionskip}{6pt}
+\begin{document}
+\maketitle
+{\singlespacing\tableofcontents}
+\newpage
+
+\section{Problem statement}
+
+\subsection{Task description}
+The project develops a machine translation system that converts transliterated Old Assyrian cuneiform into English. Old Assyrian is a low-resource, morphologically rich Semitic language. The texts are mostly administrative and commercial records of Assyrian merchants. They contain scribal notation, determinatives and damaged passages.
+
+\subsection{Data source}
+The data comes from the Deep Past Initiative competition \cite{deeppast}. All models are trained on the competition file \texttt{train.csv}: 1{,}561 documents with the columns \texttt{oare\_id}, \texttt{transliteration} and \texttt{translation}. The text is used as provided; only rows with an empty source or target would be dropped. Training and validation are at document level, while the competition test set is at sentence level.
+
+\subsection{Evaluation metrics}
+The score is the geometric mean (GM) of corpus BLEU \cite{bleu} and corpus chrF++ \cite{chrfpp}:
+\begin{equation}
+    \mathrm{GM} = \sqrt{\mathrm{BLEU} \times \mathrm{chrF{+}{+}}}.
+\end{equation}
+Every Phase 2 number in this report is computed by one implementation, \path{common/metrics.py}. It reproduces sacreBLEU \cite{sacrebleu} (BLEU with the 13a tokenizer; chrF++ with character 6-grams, word 2-grams and $\beta=2$), and \path{tests/test_metrics.py} checks this against sacreBLEU 2.6.0.
+
+\subsection{Evaluation protocol}
+\label{sec:protocol}
+\begin{itemize}
+    \item \textbf{One split.} 10\% of the documents: the sorted document ids are shuffled with \path{random.Random(42)} and the first 156 are used for validation, the remaining 1{,}405 for training (\texttt{common/split.py}). Every notebook compares the SHA-256 of the validation ids with a stored value and stops if it differs.
+    \item \textbf{One metric}, computed after training on the selected checkpoint against the full, untruncated references.
+    \item \textbf{Uncertainty.} 95\% bootstrap intervals over the validation documents and a paired bootstrap against the best system (5{,}000 resamples, seed 12345) \cite{koehn}. Each model was trained once (seed 42), so these intervals do not include training variance.
+    \item \textbf{Length limits} follow the 95th percentile of the training documents for each tokenizer (Table~\ref{tab:config}). ByT5 sources are the exception: 93.5\% fit completely, and the others lose at most 33 bytes (the longest source has 1{,}056 bytes and the limit includes the end token); in Phase 1 mBART and ByT5 used 256 for source and target, and Qwen used 512 for the whole sequence.
+    \item \textbf{Decoding differs and is part of each system:} mBART and Qwen are decoded greedily, ByT5 with 8 beams.
+\end{itemize}
+
+\section{Baselines (existing solutions)}
+\label{sec:baselines}
+
+As existing solutions to this translation task we identified three publicly available pretrained models from different families and adapted them: a multilingual subword encoder--decoder, a byte-level encoder--decoder and an instruction-tuned decoder-only LLM. They were chosen because transliterated Akkadian is written in Latin script with many diacritics and is not covered by the pretraining data of general translation models. The three families treat such text differently: subwords of a multilingual vocabulary, raw bytes without a vocabulary, and a large language model with a small trained adapter. All three were trained on the same 1{,}405 documents.
+
+\subsection{mBART-50}
+\path{facebook/mbart-large-50-many-to-many-mmt} \cite{mbart}, fully fine-tuned. The language code is \texttt{en\_XX} for source and target because Akkadian has no code. The checkpoint with the highest validation GM (greedy decoding, after each epoch) is kept: epoch 4.
+
+\subsection{Qwen2.5-7B-Instruct (QLoRA)}
+\path{Qwen/Qwen2.5-7B-Instruct} \cite{qwen} with 4-bit NF4 quantization and a LoRA adapter ($r=16$, $\alpha=32$, dropout 0.05) \cite{lora,qlora}. The checkpoint with the lowest validation loss is kept (epoch 2 of 2), because generating all validation documents after each epoch is too slow for a 7B model. The run log shows 44 optimizer steps per epoch and two GPUs, so the effective batch size was 32.
+
+\subsection{ByT5-small}
+\path{google/byt5-small} \cite{byt5}, fully fine-tuned on UTF-8 bytes. The checkpoint with the highest validation GM (greedy decoding) is kept: epoch 20 of 20.
+
+\begin{table}[H]
+    \centering\small
+    \caption{Training configuration of the reported runs (seed 42, Kaggle T4). The effective batch is per-device batch $\times$ accumulation $\times$ GPUs.}
+    \label{tab:config}
+    \begin{tabular}{lccc}
+        \toprule
+        & \textbf{mBART-50} & \textbf{Qwen2.5-7B} & \textbf{ByT5-small} \\
+        \midrule
+        Epochs & 5 & 2 & 20 \\
+        Learning rate & $5\cdot10^{-5}$ & $2\cdot10^{-4}$ & $2\cdot10^{-4}$ \\
+        Batch $\times$ accumulation & $2\times4$ & $1\times16$ & $2\times4$ \\
+        GPUs used & 2 & 2 & 2 \\
+        Effective batch & 16 & 32 & 16 \\
+        Optimizer steps per epoch & 88 & 44 & 88 \\
+        Max source / target & 576 / 448 tokens & 1{,}024 / 448 tokens & 1{,}024 / 1{,}408 bytes \\
+        Checkpoint selected by & validation GM & validation loss & validation GM \\
+        Decoding & greedy & greedy & 8 beams \\
+        Training time & 1 h 01 min & 1 h 53 min & 6 h 12 min \\
+        \bottomrule
+    \end{tabular}
+
+    \footnotesize For Qwen, 1{,}024 is the limit for prompt, source and target together, and 448 the limit for generated tokens.
+\end{table}
+
+\subsection{Comparison of baselines}
+
+\begin{table}[H]
+    \centering
+    \caption{Baselines on the 156 shared validation documents.}
+    \label{tab:baselines}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{Model} & \textbf{BLEU} & \textbf{chrF++} & \textbf{GM} & \textbf{GM 95\% CI} \\
+        \midrule
+        mBART-50 & \textbf{33.40} & \textbf{53.93} & \textbf{42.44} & 39.73--44.93 \\
+        Qwen2.5-7B (QLoRA) & 25.73 & 47.56 & 34.98 & 32.33--37.55 \\
+        ByT5-small & 13.64 & 31.12 & 20.60 & 18.68--22.77 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            ybar, bar width=12pt, width=0.95\textwidth, height=7.5cm,
+            ylabel={Score}, symbolic x coords={mbart, qwen, byt5}, xtick=data,
+            xticklabels={mBART-50, Qwen2.5-7B, ByT5-small},
+            ymin=0, ymax=65, enlarge x limits=0.25,
+            legend style={at={(0.5,-0.15)}, anchor=north, legend columns=-1},
+            nodes near coords, every node near coord/.append style={font=\tiny},
+        ]
+        \addplot coordinates {(mbart,33.40) (qwen,25.73) (byt5,13.64)};
+        \addplot coordinates {(mbart,53.93) (qwen,47.56) (byt5,31.12)};
+        \addplot coordinates {(mbart,42.44) (qwen,34.98) (byt5,20.60)};
+        \legend{BLEU, chrF++, GM}
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Validation metrics of the three baselines (same documents, same metric).}
+    \label{fig:metrics}
+\end{figure}
+
+\paragraph{Analysis.}
+mBART-50 is the best baseline on both metrics. Its advantage over Qwen is 7.35 GM (95\% CI 5.52--9.07, paired bootstrap) and its advantage over ByT5 is 21.70 GM (19.03--24.21). Neither interval includes zero, but both cover only the choice of validation documents, not training variance. The comparison is between complete training recipes with different budgets, not between architectures: ByT5's best checkpoint is its last epoch (Figure~\ref{fig:curves}). Its validation GM flattened only at the end of the 20 epochs, when the linearly decaying learning rate approached zero, so a longer schedule could still improve it.
+
+\section{Proposed model}
+\label{sec:proposed}
+\textbf{mBART-50} is the proposed model because it has the highest BLEU, chrF++ and GM on the shared validation set (Table~\ref{tab:baselines}).
+
+\subsection{Architecture}
+\path{facebook/mbart-large-50-many-to-many-mmt}, a multilingual sequence-to-sequence Transformer, used without architectural changes.
+
+\subsection{Training procedure}
+Five epochs, Adafactor, learning rate $5\cdot10^{-5}$, weight decay 0.01, mixed precision (fp16), gradient checkpointing, limits 576/448 tokens. The remaining settings are in Table~\ref{tab:config}, and the exact values are in \path{results/run_mbart50__seed42.json}. Batches are sampled randomly and padded dynamically.
+
+\subsection{Metrics}
+BLEU 33.40, chrF++ 53.93, GM 42.44 (95\% CI 39.73--44.93).
+
+\begin{figure}[H]
+    \centering
+    \begin{tikzpicture}
+        \begin{axis}[
+            width=0.85\textwidth, height=6.5cm, xlabel={Epoch}, ylabel={Validation GM (greedy)},
+            xmin=0, xmax=21, ymin=0, ymax=50, legend pos=north east, grid=major,
+        ]
+        \addplot+[mark=*] coordinates {(1,26.60) (2,38.21) (3,40.13) (4,43.39) (5,42.62)};
+        \addplot+[mark=square*] coordinates {(1,1.76) (2,5.22) (3,6.76) (4,9.00) (5,9.73) (6,11.48) (7,12.30) (8,13.88) (9,13.35) (10,13.78) (11,16.17) (12,15.56) (13,17.33) (14,18.75) (15,19.94) (16,19.14) (17,19.50) (18,20.17) (19,20.16) (20,20.23)};
+        \legend{mBART-50, ByT5-small}
+        \end{axis}
+    \end{tikzpicture}
+    \caption{Validation GM during training, used only to select checkpoints. These values use references truncated to the target limit, so they differ slightly from Table~\ref{tab:baselines}.}
+    \label{fig:curves}
+\end{figure}
+
+\section{Model improvements}
+\label{sec:improvements}
+Two changes to the system were tested. Both combine several outputs with Minimum Bayes Risk (MBR) selection \cite{mbr}: the candidate with the highest mean sentence chrF++ against the other candidates is kept. All candidates have an equal vote.
+
+\subsection{Three-model MBR ensemble}
+Candidates: the recorded validation predictions of mBART-50, Qwen and ByT5 (one each). The selection uses no references. It was computed with \path{tools/mbr_from_predictions.py} from the recorded predictions, without a joint inference run. The rule is the same as in \path{ensemble-pipeline.ipynb}; that notebook would decode all members with 4 beams and has not been executed in Phase 2. Because all three models are trained on the same split, no validation document is in any member's training data.
+
+\subsection{ByT5 MBR}
+A second ByT5 model (\texttt{byt5-member2}, 15 epochs on 1{,}194 of the 1{,}405 training documents) is added to the baseline, and the 5 best beam hypotheses of each model are combined with MBR.
+
+\subsection{Results}
+\begin{table}[H]
+    \centering
+    \caption{Effect of the improvements on the shared validation set.}
+    \label{tab:improvements}
+    \begin{tabular}{lcccc}
+        \toprule
+        \textbf{System} & \textbf{BLEU} & \textbf{chrF++} & \textbf{GM} & \textbf{GM 95\% CI} \\
+        \midrule
+        mBART-50 (proposed model) & 33.40 & 53.93 & 42.44 & 39.73--44.93 \\
+        MBR ensemble of 3 models & 30.26 & 52.31 & 39.79 & 37.11--42.33 \\
+        \midrule
+        ByT5 baseline & 13.64 & 31.12 & 20.60 & 18.68--22.77 \\
+        ByT5 member 2 & 10.23 & 26.12 & 16.35 & 14.63--18.34 \\
+        ByT5 MBR (both models) & 10.35 & 28.55 & 17.19 & 15.44--19.15 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The three-model ensemble scores 2.61 GM below mBART-50 alone (paired bootstrap, 95\% CI 0.84 to 4.71). This difference is larger than expected from document sampling alone. The documents were taken from: mBART 84, Qwen 48, ByT5 24. Equal votes give two weaker models a majority over the strongest one, so the proposed single model is kept.
+
+ByT5 MBR is worse than the ByT5 baseline (17.19 against 20.60). Its outputs are longer than the references (median length ratio 1.19) and contain more repetition loops (94 of 156 documents against 77 for the baseline). A likely cause is that candidates sharing the same repeated text agree with each other, so an agreement-based rule favours them.
+
+\section{Results}
+\label{sec:results}
+
+\subsection{Validation results and provenance}
+Table~\ref{tab:provenance} links every reported row to the notebook, run record and prediction file. The full registry with hyperparameters and best epochs is \path{results/experiment_registry.md}.
+
+\begin{table}[H]
+    \centering\footnotesize
+    \caption{Provenance of all reported validation results (seed 42). Files are in \texttt{results/}; predictions are in \texttt{preds\_val\_<system>\_\_seed42.csv}.}
+    \label{tab:provenance}
+    \begin{tabular}{llll}
+        \toprule
+        \textbf{Row} & \textbf{GM} & \textbf{Produced by} & \textbf{Run record} \\
+        \midrule
+        mBART-50 & 42.44 & \texttt{mbart50.ipynb} & \path{run_mbart50__seed42.json} \\
+        Qwen2.5-7B & 34.98 & \path{pipeline_QwenQLoRa.ipynb} & \path{run_qwen2.5-7b-lora__seed42.json} \\
+        ByT5 baseline & 20.60 & \path{byte-level-seq2seq.ipynb} & \path{run_byt5__seed42.json} \\
+        ByT5 member 2 & 16.35 & \path{byte-level-seq2seq.ipynb} & \path{run_byt5-member2__seed42.json} \\
+        ByT5 MBR & 17.19 & \path{byte-level-seq2seq.ipynb} & \path{run_byt5-mbr__seed42.json} \\
+        MBR ensemble & 39.79 & \path{mbr_from_predictions.py} & \path{run_mbr3-ensemble__seed42.json} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The Qwen result comes from a run in which the first generation call failed (missing autocast); the predictions were then generated in the same session with autocast. The executed notebook is kept in \path{legacy/executed/}. The submitted notebook contains the fix but has not been rerun end to end.
+
+\subsection{Error analysis}
+Produced by \path{tools/analyze_runs.py} (\path{results/error_analysis.md}). Documents are split into terciles by source length; \emph{damaged} documents contain gap or \texttt{x} markers. Number and name recall are string-based heuristics.
+
+\begin{table}[H]
+    \centering\small
+    \caption{GM on subsets of the validation documents.}
+    \label{tab:subsets}
+    \begin{tabular}{lccccc}
+        \toprule
+        \textbf{Model} & \textbf{Short} & \textbf{Medium} & \textbf{Long} & \textbf{Damaged} & \textbf{Intact} \\
+        \midrule
+        mBART-50 & 49.95 & 44.55 & 40.20 & 41.79 & 42.72 \\
+        Qwen2.5-7B & 41.62 & 37.32 & 32.77 & 35.49 & 34.56 \\
+        ByT5 baseline & 42.05 & 22.25 & 16.34 & 19.07 & 21.84 \\
+        MBR ensemble & 48.79 & 40.80 & 37.81 & 39.69 & 39.88 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{table}[H]
+    \centering\small
+    \caption{Error statistics. \emph{Length}: median output/reference length in words. \emph{Short}: outputs below half the reference length. \emph{Repetitive}: more than 30\% repeated 4-grams.}
+    \label{tab:errors}
+    \begin{tabular}{lcccccc}
+        \toprule
+        \textbf{Model} & \textbf{Numbers} & \textbf{Names} & \textbf{Length} & \textbf{Short} & \textbf{Repetitive} & \textbf{Empty} \\
+        \midrule
+        mBART-50 & 0.817 & 0.679 & 0.98 & 7 & 5 & 0 \\
+        Qwen2.5-7B & 0.777 & 0.627 & 0.93 & 6 & 3 & 0 \\
+        ByT5 baseline & 0.588 & 0.526 & 0.97 & 16 & 77 & 0 \\
+        ByT5 MBR & 0.561 & 0.492 & 1.19 & 4 & 94 & 0 \\
+        MBR ensemble & 0.825 & 0.672 & 1.00 & 5 & 12 & 0 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\begin{itemize}
+    \item \textbf{Length.} All models lose quality on longer documents. ByT5 is affected most: GM 42.05 on short and 16.34 on long documents. On short documents it is close to Qwen.
+    \item \textbf{Repetition.} 77 of 156 ByT5 outputs are repetitive, against 5 for mBART and 3 for Qwen. Together with the length effect this is the main weakness of ByT5 here.
+    \item \textbf{Facts.} Among the single models, mBART reproduces numbers and names most often, which matters for commercial texts, but it still misses about a third of the names.
+    \item \textbf{Damage.} Damaged documents are not consistently harder than intact ones for mBART and Qwen; the differences are small.
+\end{itemize}
+
+\subsection{Status of the Phase 1 numbers}
+\label{sec:phaseone}
+The validation numbers of the Phase 1 report are \textbf{withdrawn}. They came from different validation splits, different metric implementations and, for mBART and ByT5, references truncated to 256 tokens or bytes. They were also not linked to runs. The MLflow records are now exported to \path{results/phase1/mlflow_runs.json}:
+
+\begin{table}[H]
+    \centering\footnotesize
+    \caption{MLflow runs behind the Phase 1 validation rows and the last Phase 1 run of each model. GM is recomputed from the logged BLEU and chrF. \textbf{The values are not comparable between models or with Phase 2.}}
+    \label{tab:phaseone}
+    \begin{tabular}{lllccc}
+        \toprule
+        \textbf{Model} & \textbf{Run} & \textbf{Settings} & \textbf{BLEU} & \textbf{chrF} & \textbf{GM} \\
+        \midrule
+        \multicolumn{6}{l}{\emph{Source of the Phase 1 tables}} \\
+        mBART & \texttt{634d0bbb} & 5 ep., batch 1 & 20.12 & 40.80 & 28.65 \\
+        Qwen & \texttt{52ae01a0} & 2 ep., 1$\times$16 & 11.44 & 29.46 & 18.36 \\
+        ByT5 & \texttt{2d21940c} & none (logging test) & (12.34) & (45.67) & --- \\
+        \multicolumn{6}{l}{\emph{ByT5 runs with the settings described in Phase 1 (10 ep., lr $3\cdot10^{-4}$)}} \\
+        ByT5 & \texttt{7ff84a28} & marked failed after evaluation & 25.31 & 43.30 & 33.10 \\
+        ByT5 & \texttt{316d7e4e} & finished & 24.42 & 42.75 & 32.31 \\
+        \multicolumn{6}{l}{\emph{Last Phase 1 runs (settings of the submitted notebooks)}} \\
+        mBART & \texttt{398a01b9} & 5 ep., batch 4 & 22.95 & 48.39 & 33.33 \\
+        Qwen & \texttt{4c10e51f} & 2 ep., 1$\times$16 & 8.06 & 25.23 & 14.26 \\
+        ByT5 & \texttt{16bd7920} & 20 ep., lr $2\cdot10^{-4}$ & 30.89 & 49.83 & 39.23 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\paragraph{Correction.}
+The ByT5 row of the Phase 1 report (12.34 / 45.67 / 23.74) does not come from a trained model. The matching run \texttt{2d21940c}, named \texttt{mlflow\_debug}, lasted 0.7 seconds, has no parameters, and logged the placeholder values 1.234, 1.567, 12.34 and 45.67. It was a test of the logging connection, and its values were reported by mistake. The rebuttal repeated this run as evidence; that statement was wrong.
+
+\paragraph{Why the ByT5 score is much lower than in Phase 1.}
+In Phase 1 ByT5 read and produced at most 256 bytes, and the references were cut to the same length. This truncated 72\% of the sources and 66\% of the translations, so those scores (39.23 above; 33.47 and 36.30 in the review) measure mostly the beginnings of documents, on another split. Phase 2 scores complete documents, which are much longer for a byte-level model. As a rough check, we cut the Phase 2 outputs and references to 256 bytes before scoring: ByT5 then reaches 35.07 GM instead of 20.60 (mBART 48.27, Qwen 41.14). The 42.05 GM on short documents points in the same direction. Document length therefore explains part of the drop, but the effect was not isolated in a separate experiment, and the different split, training data and sequence lengths may also have contributed. The two sets of scores must not be compared directly, and they do not show that the ByT5 architecture is unsuitable.
+
+\subsection{Public leaderboard (Phase 1 submissions)}
+No new leaderboard submission was made in Phase 2. The Phase 1 submissions scored 28.0895 (mBART-50) and 27.3855 (ensemble). The reviewers obtained 27.9735 and 27.3855 with their reruns. The leaderboard scores sentences, so these values cannot be compared with the document-level validation scores above, and they say nothing about the Phase 2 models.
+
+\section{Reproducibility}
+\label{sec:repro}
+Step-by-step instructions are in \texttt{README.md}. In short:
+
+\begin{itemize}
+    \item \textbf{Without a GPU:} the scores, confidence intervals, ensemble, tables and error analysis are recomputed from \texttt{results/} with the scripts in \texttt{tools/}. \texttt{train.csv} of the competition must be placed in the repository root.
+    \item \textbf{Retraining:} \texttt{mbart50.ipynb} (Internet off, third-party base weights attached), \path{byte-level-seq2seq.ipynb} and \path{pipeline_QwenQLoRa.ipynb} (Internet on) run on Kaggle T4~$\times$2. By default they read no secrets and upload nothing.
+    \item \textbf{Environment:} package versions and GPUs of each run are in \path{results/env_*.json} (all training runs: Python 3.13.16, PyTorch 2.11.0, transformers 5.20.2, two Tesla T4; Qwen also peft 0.21.2 and bitsandbytes 0.50.2).
+    \item \textbf{Weights:} The Phase 2 weights are kept by the team but are not part of the archive because of their size (mBART 2.4 GB, ByT5 1.2 GB per model, Qwen adapter 0.16 GB) and are not published. Retraining instructions are in the README. Scores of retrained models can differ slightly because GPU training is not fully deterministic.
+    \item \textbf{Consistency checks:} \path{tools/sync_shared_cells.py} \texttt{-{}-check} verifies that all notebooks contain the same split, metric and logging code; \texttt{pytest tests/} checks the metric against sacreBLEU and the MBR rule.
+\end{itemize}
+
+The \texttt{preprocessing/} directory builds a sentence-level dataset that was not used for any reported model.
+
+\section{Conclusion}
+
+\subsection{Summary of findings}
+\begin{itemize}
+    \item On one shared validation set and one metric, \textbf{mBART-50} is the best of the three baselines (GM 42.44), followed by Qwen2.5-7B with QLoRA (34.98) and ByT5-small (20.60). The order of the last two is the reverse of the one given in the Phase 1 report.
+    \item An equal-vote MBR ensemble of the three models scored 39.79, against 42.44 for mBART-50 alone. It did not improve on the best single model.
+    \item MBR over two ByT5 models reduced the score (17.19 against 20.60), probably because repeated text reinforces itself in an agreement-based selection.
+    \item The main problems are long documents, proper names and, for ByT5, repetition loops.
+\end{itemize}
+
+\subsection{Limitations}
+\begin{itemize}
+    \item \textbf{One seed per model.} Training variance was not measured.
+    \item \textbf{One validation split}, which was also used to select checkpoints. The scores are therefore slightly optimistic.
+    \item \textbf{Different training budgets and decoding.} The result ranks training recipes, not architectures. ByT5 reached its best score in the last epoch, and Qwen was trained for only 2 epochs.
+    \item \textbf{Ensemble from recorded outputs} with each member's own decoding; not run on the test set.
+    \item \textbf{No new leaderboard submission}, and the Phase 2 weights are not published. The mBART test-time inference uses 5 beams, unlike the greedy validation decoding, and was not evaluated; one of its four sample-test outputs is a repetition loop.
+    \item \textbf{Document-level training}, while the competition scores sentences.
+    \item \textbf{Automatic metrics only.} No Assyriologist checked the translations, and there was no systematic hyperparameter search.
+\end{itemize}
+
+\subsection{Future work}
+Repeat the training with several seeds; train ByT5 longer and constrain repetition during decoding; train on the sentence-level data; compare decoding settings for all models; combine n-best lists of mBART and Qwen; test task-adaptive pretraining and back-translation.
+
+\begin{thebibliography}{99}\small
+\bibitem{deeppast} Deep Past Initiative Machine Translation, Kaggle competition. \url{https://www.kaggle.com/competitions/deep-past-initiative-machine-translation}
+\bibitem{mbart} Y. Tang et al. Multilingual Translation with Extensible Multilingual Pretraining and Finetuning. arXiv:2008.00401, 2020.
+\bibitem{byt5} L. Xue et al. ByT5: Towards a Token-Free Future with Pre-trained Byte-to-Byte Models. TACL, 2022.
+\bibitem{qwen} Qwen Team. Qwen2.5 Technical Report. arXiv:2412.15115, 2024.
+\bibitem{lora} E. J. Hu et al. LoRA: Low-Rank Adaptation of Large Language Models. ICLR, 2022.
+\bibitem{qlora} T. Dettmers et al. QLoRA: Efficient Finetuning of Quantized LLMs. NeurIPS, 2023.
+\bibitem{bleu} K. Papineni et al. BLEU: a Method for Automatic Evaluation of Machine Translation. ACL, 2002.
+\bibitem{chrfpp} M. Popovi\'c. chrF++: words helping character n-grams. WMT, 2017.
+\bibitem{sacrebleu} M. Post. A Call for Clarity in Reporting BLEU Scores. WMT, 2018.
+\bibitem{mbr} S. Kumar and W. Byrne. Minimum Bayes-Risk Decoding for Statistical Machine Translation. HLT-NAACL, 2004.
+\bibitem{koehn} P. Koehn. Statistical Significance Tests for Machine Translation Evaluation. EMNLP, 2004.
+\end{thebibliography}
+
+\end{document}

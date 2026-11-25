@@ -1,0 +1,29 @@
+{
+  "system": "mbr3-ensemble",
+  "seed": 42,
+  "created_utc": "2026-11-25T08:37:27",
+  "metric": "BLEU=sacrebleu-2.x-13a-exp | chrF++=sacrebleu-2.x-c6-w2-b2 | geo_mean=sqrt(BLEU*chrF++)",
+  "n_val_docs": 156,
+  "val_ids_sha256": "1939161cfcb9ff85082f20b36be2362da429f1da14f8a94f289249ffb78e1304",
+  "final_val": {
+    "bleu": 30.262799974442512,
+    "chrfpp": 52.30952895637735,
+    "geo_mean": 39.78734486698197
+  },
+  "hyperparameters": {
+    "members": [
+      "byt5",
+      "mbart50",
+      "qwen2.5-7b-lora"
+    ],
+    "utility": "mean sentence chrF++ against the other candidates",
+    "votes": "equal",
+    "selected_per_member": {
+      "mbart50": 84,
+      "qwen2.5-7b-lora": 48,
+      "byt5": 24
+    }
+  },
+  "notes": "computed offline by tools/mbr_from_predictions.py from the recorded member predictions",
+  "log_history": []
+}

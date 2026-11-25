@@ -18,15 +18,16 @@ All notebooks run in **Kaggle Notebooks** with a GPU. The helper scripts in `too
 | Metric | sacreBLEU-identical BLEU + chrF++ (char 6-grams + word 2-grams), GM = √(BLEU·chrF++) | `common/metrics.py` |
 | Reported score | Computed **after** training, on the best checkpoint, against the full (untruncated) reference translations | `finalize_run` in `common/runlog.py` |
 | Checkpoint selection | Validation GM after every epoch, greedy decoding (mBART, ByT5). Qwen uses validation loss, because generating 156 documents with a 7B model every epoch is too slow. | training notebooks |
-| Seeds | mBART and ByT5: seeds 42, 43, 44. Qwen: seed 42 (one 7B run). Results are reported as mean ± std. | `SEED` in each notebook |
-| Uncertainty | 95% bootstrap CI over validation documents (1,000 resamples) and a paired bootstrap test against the best system | `tools/evaluate_all.py` |
+| Seeds | One training run per model (seed 42). Seed-to-seed variance was **not** measured. | `SEED` in each notebook |
+| Decoding of the reported scores | mBART: greedy. Qwen: greedy. ByT5: beam search (8 beams). Each prediction file comes from the model's own training notebook. | training notebooks |
+| Uncertainty | 95% bootstrap CI over validation documents and a paired bootstrap test against the best system (5,000 resamples). They cover document sampling only, not training variance | `tools/evaluate_all.py` |
 | Run record | One `preds_val_<system>__seed<k>.csv` and one `run_<system>__seed<k>.json` per trained model (hyperparameters, split checksum, metric, per-epoch log), plus `env_<notebook>.json` with package versions and GPU | `results/` |
 
 The shared code lives in `common/`. Kaggle notebooks cannot import from the repository, so each notebook contains verbatim copies of these modules in cells marked `# >>> SHARED CELL`. `python tools/sync_shared_cells.py --check` verifies that the copies are identical to `common/`.
 
 ### Length limits
 
-Each model's limits are set so that at least 95% of training documents fit without truncation. The limits are measured with that model's own tokenizer:
+Each model's limits follow the 95th percentile (p95) of the training documents, measured with that model's own tokenizer. One exception: the ByT5 limit includes the end token, so 93.5% of the sources fit completely and the others lose at most 33 bytes (the longest source has 1,056 bytes).
 
 | Model | Unit | Source (p95) | Target (p95) | Limits used |
 |---|---|---:|---:|---|
@@ -40,19 +41,31 @@ Each model's limits are set so that at least 95% of training documents fit witho
 mbart50.ipynb               mBART-50 fine-tuning, validation, test inference
 byte-level-seq2seq.ipynb    ByT5-small fine-tuning (+ ByT5-only MBR ensemble), validation, test inference
 pipeline_QwenQLoRa.ipynb    Qwen2.5-7B-Instruct QLoRA fine-tuning and validation
-ensemble-pipeline.ipynb     3-model MBR ensemble (offline), validation and submission.csv
+ensemble-pipeline.ipynb     3-model MBR ensemble (offline); not executed in Phase 2, see below
 common/                     shared split, metric, run record, environment report
-tools/evaluate_all.py       one table for all runs: mean ± std over seeds, bootstrap CIs, paired tests
+tools/evaluate_all.py       one table for all runs: scores, bootstrap CIs, paired tests (and mean ± std if several seeds exist)
 tools/analyze_runs.py       experiment registry, training curves, error analysis
+tools/mbr_from_predictions.py  MBR ensemble from the saved validation predictions (no GPU)
 tools/sync_shared_cells.py  copies common/*.py into the notebooks (or checks them with --check)
-tests/test_metrics.py       metric parity with sacreBLEU
+tests/                      metric parity with sacreBLEU, MBR selection rule
 data/val_ids.csv            the 156 shared validation documents
-results/                    run records produced by the notebooks (input for the tools)
+results/                    run records and predictions of the reported runs, plus the generated tables
+results/phase1/             exported MLflow records of the Phase 1 runs
 preprocessing/              sentence-level dataset pipeline (not used for the reported models)
-legacy/                     early Qwen CLI scripts (not used for any reported result)
+legacy/                     Phase 1 ensemble, executed Qwen notebook, early Qwen CLI scripts
 ```
 
 ## Reproducing the results
+
+### What is provided and what must be retrained
+
+| Item | Status |
+|---|---|
+| Validation predictions, run records, environment of every reported Phase 2 run | in `results/` |
+| Phase 2 weights (mBART 2.4 GB, ByT5 1.2 GB per model, Qwen adapter 162 MB) | kept by the team, **not part of the repository or archive and not published**. Retrain with the notebooks below |
+| Phase 1 weights of all three models (trained on the old, different splits) | published on Kaggle under `eeee13`; used only by `legacy/phase1/` |
+
+All reported validation scores, tables, figures and the ensemble score can be recomputed **without a GPU and without weights** from `results/` (step 5). Retraining reproduces the procedure; scores can differ slightly between runs because GPU training is not fully deterministic.
 
 ### Kaggle inputs
 
@@ -60,52 +73,54 @@ legacy/                     early Qwen CLI scripts (not used for any reported re
 |---|---|---|
 | Competition data | [deep-past-initiative-machine-translation](https://www.kaggle.com/competitions/deep-past-initiative-machine-translation) | all notebooks |
 | mBART-50 base weights (third party) | [facebookmbart-large-50-many-to-many-mmt](https://www.kaggle.com/models/nensipansuriya1311/facebookmbart-large-50-many-to-many-mmt) | `mbart50.ipynb` (offline mode) |
-| ByT5-small pretrained base weights | Add the saved output of [nikhilsatani/byt5-small](https://www.kaggle.com/code/nikhilsatani/byt5-small/notebook) using Kaggle **Add Input → Notebooks**; the notebook auto-detects the checkpoint, or set `BASE_MODEL_OFFLINE_PATH` | `byte-level-seq2seq.ipynb` (offline mode) |
 | Qwen2.5-7B-Instruct base | [eeee13/qwen2.5-7b-instruct](https://www.kaggle.com/models/eeee13/qwen2.5-7b-instruct), variation `base-v1` | `ensemble-pipeline.ipynb` |
-| Fine-tuned mBART | [eeee13/akkadian-mbart](https://www.kaggle.com/models/eeee13/akkadian-mbart), variation `mbart50-seed42` | `ensemble-pipeline.ipynb` |
-| Fine-tuned ByT5 | [eeee13/akkadian-byt5](https://www.kaggle.com/models/eeee13/akkadian-byt5), variation `byt5-seed42` | `ensemble-pipeline.ipynb` |
-| Qwen LoRA adapter | [eeee13/akkadika](https://www.kaggle.com/models/eeee13/akkadika), variation `qwen-lora-seed42` | `ensemble-pipeline.ipynb` |
 | bitsandbytes wheel | [eeee13/bitsandbytes](https://www.kaggle.com/datasets/eeee13/bitsandbytes) | `ensemble-pipeline.ipynb` (offline install) |
 
-The fine-tuned weights are published. The ensemble can therefore be reproduced without retraining anything, and every training notebook can be rerun from scratch.
+ByT5 and Qwen download their pretrained base models (`google/byt5-small`, `Qwen/Qwen2.5-7B-Instruct`) from Hugging Face, so they need Internet ON.
 
 ### Settings common to all notebooks
 
-- Accelerator: **GPU T4 ×2** or **P100** (≥ 16 GB VRAM).
+- Accelerator: **GPU T4 ×2** (used for the recorded runs). On T4 ×2 the Trainer uses both GPUs, so the effective batch is per-device batch × accumulation × 2. On a single GPU it is half as large.
 - Environment: Kaggle's default Python image. The versions actually used are recorded in `results/env_<notebook>.json`. For an exact rerun, select *Settings → Environment → Pin to original environment*.
-- Default flags never read Kaggle Secrets and never upload anything: `USE_TRACKING = False`, `PUBLISH_MODELS = False`. mBART, ByT5 and the ensemble default to `EXECUTION_MODE = "offline"`; attach their required model inputs before running offline.
+- Default flags never read Kaggle Secrets and never upload anything: `USE_TRACKING = False`, `PUBLISH_MODELS = False`. mBART and the ensemble default to `EXECUTION_MODE = "offline"`, ByT5 to `"online"`.
 - Outputs: each notebook writes `results/` into `/kaggle/working/`. Download it from the *Output* tab.
 
-### 1. `mbart50.ipynb` (about 1–1.5 h per seed on a T4)
+### 1. `mbart50.ipynb` (recorded training time: 61 min)
 
-1. Attach the competition data and the third-party mBART-50 base weights. Set Internet **OFF** (offline mode loads the base model from the attached input).
-2. Keep `EXECUTION_MODE = "offline"` and set `SEED` (42, then 43, then 44).
-3. *Run All*. Outputs: `results/preds_val_mbart50__seed<k>.csv`, `results/run_mbart50__seed<k>.json`, `results/env_mbart50.json`, the model in `mbart50-model/` and `submission.csv`.
+1. Attach the competition data and the third-party mBART-50 base weights. Internet **OFF** (offline mode loads the base model from the attached input).
+2. Keep `EXECUTION_MODE = "offline"` and `SEED = 42`. *Run All*.
+3. Outputs: `results/preds_val_mbart50__seed42.csv`, `results/run_mbart50__seed42.json`, `results/env_mbart50.json`, the model in `mbart50-model/` and `submission.csv`.
 
-### 2. `byte-level-seq2seq.ipynb` (about 3–4 h for seed 42, about 2 h for each of seeds 43 and 44)
+It runs on the current Kaggle image (the Phase 1 argument `group_by_length`, removed in transformers 5.2, is gone). Validation is decoded greedily; `submission.csv` uses the base model's generation defaults (5 beams) and was not evaluated in Phase 2: one of its four sample-test outputs is a repetition loop.
 
-1. Attach the competition data and add the saved output of [nikhilsatani/byt5-small](https://www.kaggle.com/code/nikhilsatani/byt5-small/notebook) via Kaggle **Add Input → Notebooks**. Choose a version whose outputs contain the pretrained ByT5 checkpoint. Keep Internet **OFF** and `EXECUTION_MODE = "offline"`; the notebook scans `/kaggle/input` and auto-detects one checkpoint. If more than one is attached, set `BASE_MODEL_OFFLINE_PATH` to the checkpoint folder. The offline run skips pip, secrets, tracking, Hub calls and downloads.
-2. Keep `USE_TRACKING = False`, `PUBLISH_MODELS = False`, and set `SEED`. Seed 42 trains the baseline (`byt5`, full training split) and one extra member (`byt5-member2`, 85% bootstrap subset) for the ByT5-only MBR ensemble. Seeds 43 and 44 train only the baseline.
-3. *Run All*. If you later need to publish weights, enable Internet and set `EXECUTION_MODE = "online"`, `PUBLISH_MODELS = True`, then run the final publishing cell. Outputs: `results/preds_val_byt5__seed<k>.csv` (plus `byt5-member2` and `byt5-mbr` for seed 42), the run records, the weights in `outputs/final_model_*` and `submission.csv`.
+### 2. `byte-level-seq2seq.ipynb` (recorded training time: 6 h 12 min for `byt5`, 4 h 19 min for `byt5-member2`)
 
-### 3. `pipeline_QwenQLoRa.ipynb` (several hours on a T4)
+1. Attach the competition data. Internet **ON**; keep `EXECUTION_MODE = "online"` (downloads `google/byt5-small`; no account or token needed).
+2. Keep `USE_TRACKING = False`, `PUBLISH_MODELS = False`, `SEED = 42`. *Run All* trains the baseline (`byt5`, full training split) and `byt5-member2` (85% subset) and evaluates the ByT5-only MBR ensemble. The whole recorded notebook took 11 h 24 min, close to Kaggle's 12 h session limit. Set `N_MODELS = 1` to reproduce only the baseline.
+3. Outputs: `results/preds_val_byt5__seed42.csv` (plus `byt5-member2` and `byt5-mbr`), the run records, the weights in `outputs/final_model_*` and `submission.csv`.
 
-1. Attach the competition data. Set Internet **ON** (downloads `Qwen/Qwen2.5-7B-Instruct`).
-2. Keep `USE_TRACKING = False`. *Run All*. Outputs: `results/preds_val_qwen2.5-7b-lora__seed42.csv`, the run record, and the adapter in `outputs/qwen2.5-7b-lora/`.
+### 3. `pipeline_QwenQLoRa.ipynb` (recorded training time: 1 h 53 min, plus validation generation)
 
-### 4. `ensemble-pipeline.ipynb` (offline, about 1 h)
+1. Attach the competition data. Accelerator T4 ×2, Internet **ON** (downloads `Qwen/Qwen2.5-7B-Instruct`).
+2. Keep `USE_TRACKING = False` and `PUBLISH_MODELS = False`. *Run All*.
+3. Outputs: `results/preds_val_qwen2.5-7b-lora__seed42.csv`, the run record, and the adapter in `outputs/qwen2.5-7b-lora/`.
 
-1. Attach every resource in the table above (the competition data, the Qwen base model, the three fine-tuned members and the bitsandbytes wheel). Set Internet **OFF**.
-2. Check that the paths in cell *“Local Kaggle input paths”* match the *Input* panel (the version number may differ).
-3. *Run All*. Outputs: `submission.csv`, `ensemble_candidates_debug.csv`, and run records for every member and for `mbr3-ensemble`.
+In the recorded run generation first failed because it ran outside autocast; the same process then generated the validation predictions inside autocast. The notebook now contains that fix in `generate_predictions`; the training code is unchanged and **the fixed notebook has not been rerun end to end**. The executed original is kept in `legacy/executed/`. The recorded run used two GPUs (44 steps per epoch, effective batch 32).
+
+### 4. `ensemble-pipeline.ipynb` (not executed in Phase 2)
+
+Needs the three fine-tuned members, whose Phase 2 weights are not published. To run it, train the members (steps 1–3), upload the saved folders as Kaggle inputs, set the four paths in *Local Kaggle input paths*, attach the remaining inputs from the table above, set Internet **OFF** and *Run All*. It decodes every member with 4 beams, so its scores will not equal the reported ones.
+
+The ensemble score in the report is computed from the recorded predictions with the same MBR rule (step 5). To reproduce the Phase 1 leaderboard submission (27.3855), use `legacy/phase1/`.
 
 ### 5. Results table, figures and error analysis (local, a few minutes)
 
-Collect every notebook's `results/` folder into the repository's `results/` folder, then run:
+`results/` already contains the recorded predictions and run records. If you retrained a model, copy the notebook's `results/` folder over it. Then run:
 
 ```bash
 pip install -r requirements.txt
-python tools/evaluate_all.py results/preds_val_*.csv --out results
+python tools/mbr_from_predictions.py results/preds_val_byt5__seed42.csv results/preds_val_mbart50__seed42.csv results/preds_val_qwen2.5-7b-lora__seed42.csv
+python tools/evaluate_all.py results/preds_val_*.csv --out results --n-boot 5000
 python tools/analyze_runs.py --results results
 python -m pytest tests/
 python tools/sync_shared_cells.py --check
@@ -115,7 +130,7 @@ python tools/sync_shared_cells.py --check
 
 | Output | Content |
 |---|---|
-| `results/summary.md` | Main comparison: BLEU, chrF++, GM mean ± std over seeds, 95% bootstrap CI |
+| `results/summary.md` | Main comparison: BLEU, chrF++, GM and 95% bootstrap CI |
 | `results/paired_tests.csv` | Paired bootstrap of every system against the best one |
 | `results/experiment_registry.md` | One row per run: notebook, seed, hyperparameters, best epoch, scores, run record file |
 | `results/figures/curves_*.png` | Training loss and validation GM per epoch |

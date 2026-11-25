@@ -1,0 +1,85 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage[hidelinks]{hyperref}
+\usepackage{xurl}
+\title{Phase 2 fixes}
+\author{Team Yellow Duck Studio\\ Machine Translation of Old Assyrian Cuneiform}
+\date{}
+\emergencystretch=3em
+\begin{document}
+\maketitle
+
+\section{Team identifier}
+Team ``Yellow Duck Studio''. Three weaknesses were confirmed: W1, W2 and W3. References of the form ``report \S'' point to \texttt{project.pdf}.
+
+\section{W1 --- Quality of implementation and results (Severe)}
+\textbf{Confirmed weakness.} The main validation comparison used different validation sets and different metrics (mBART: character-only chrF; ByT5 and Qwen: chrF++ with word bigrams), so the ranking used to choose the model was unsupported.
+
+\begin{center}\small
+\begin{tabular}{p{0.28\textwidth}p{0.66\textwidth}}
+\toprule
+\textbf{Problem} & \textbf{Fix and location} \\
+\midrule
+Different splits & One document-level split for all models (156 validation documents). Each notebook checks the SHA-256 of the ids and stops on a mismatch: \texttt{common/split.py}, \path{data/val_ids.csv}, cells \texttt{SHARED CELL}: \path{common/split.py}. \\
+Different metrics & One metric for all models, equal to sacreBLEU BLEU and chrF++ (\texttt{word\_order=2}): \path{common/metrics.py}, \path{tests/test_metrics.py} (includes a test that a changed word boundary lowers the score). \\
+Same code in all notebooks & \path{tools/sync_shared_cells.py} \texttt{-{}-check}. \\
+Unequal conditions & ByT5 baseline trained on the full training split (Phase 1: 85\%). Length limits follow the 95th percentile of the documents for every tokenizer (ByT5 sources: 93.5\% fit completely, the rest lose at most 33 bytes) (Phase 1: 256 for mBART and ByT5, 512 for Qwen's whole sequence). Final scores use full references. Report \S1.4, Table~1. \\
+All models retrained & New results for all three models on the shared split: report Table~2, \texttt{results/}. \\
+Weak statistics & 95\% bootstrap intervals and paired bootstrap tests: \path{tools/evaluate_all.py}, \path{results/summary.md}, \path{results/paired_tests.csv}. \\
+Ensemble validation & New ensemble score on the shared split, no member trained on validation documents: \path{tools/mbr_from_predictions.py}, report \S4. Phase 1 had no valid one, because ByT5 and Qwen had been trained on other splits. \\
+Bugs found by the team & Qwen in the ensemble got a different prompt than in training; the mBART target language was not set; ByT5 ensembling used only one model (\path{range(N_MODELS-1)}); Qwen prompt slicing with padding; the ensemble's ``confidence weighting'' had no effect, because no scores were requested (now described and implemented as equal votes with chrF++). \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Result.} On the same 156 documents and metric: mBART-50 GM 42.44 (95\% CI 39.73--44.93), Qwen 34.98 (32.33--37.55), ByT5 20.60 (18.68--22.77). Paired difference mBART $-$ Qwen: 7.35 (5.52--9.07). The selection of mBART is now supported by a valid comparison. The order of Qwen and ByT5 changed compared with Phase 1.
+
+\textbf{Remaining limits (stated in the report).} One seed per model, so training variance is not measured; the decoding of ByT5 (8 beams) differs from the others (greedy); ByT5 reached its best score only in the last epoch. Report \S2.4 and \S7.2.
+
+\section{W2 --- Reproducibility of results (Minor)}
+\textbf{Confirmed weakness.} Three small fixes were needed to run the notebooks as documented.
+
+\begin{center}\small
+\begin{tabular}{p{0.34\textwidth}p{0.60\textwidth}}
+\toprule
+\textbf{Problem} & \textbf{Fix and location} \\
+\midrule
+\texttt{mbart50.ipynb} reads the secret \texttt{HF\_REPO\_NAME} offline & Read only if \texttt{IS\_ONLINE}; cell with \path{Seq2SeqTrainingArguments}. \\
+Qwen notebook uploads to Kaggle without a guard & Last cell: upload only if \texttt{PUBLISH\_MODELS = True}; the default is \texttt{False}. \\
+ByT5: \path{test_preds_per_model} undefined & Test predictions are generated before the ensemble cell; the ensemble uses all trained models. \\
+\midrule
+Incompatibility with the current Kaggle image & \path{group_by_length} (removed in transformers 5.2) no longer used in mBART; \texttt{warmup\_ratio} handled in Qwen. \\
+Qwen generation fails outside autocast & Fixed in \path{generate_predictions}. The executed original is in \path{legacy/executed/}. \\
+Package versions & \path{results/env_*.json} for each training notebook; \path{requirements.txt} for the local tools. \\
+README & Rewritten: inputs, settings, recorded times, outputs, and what is not provided. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Remaining limits.} The Phase 2 weights are kept by the team but are not part of the archive because of their size (mBART 2.4 GB, ByT5 1.2 GB per model, Qwen adapter 0.16 GB) and are not published. Retraining instructions are in the README. The validation results can be recomputed from \texttt{results/} without weights or a GPU. The corrected Qwen notebook and the Phase 2 ensemble notebook were not rerun end to end. The Phase 1 ensemble with its published weights is kept in \texttt{legacy/phase1/}.
+
+\section{W3 --- Quality of the report (Major)}
+\textbf{Confirmed weakness.} The report did not show which submitted training setup produced each main result.
+
+\begin{center}\small
+\begin{tabular}{p{0.34\textwidth}p{0.60\textwidth}}
+\toprule
+\textbf{Problem} & \textbf{Fix and location} \\
+\midrule
+Rows not linked to runs & Provenance table: report \S5.1. One JSON record per run (hyperparameters, split checksum, metric, per-epoch log): \path{results/run_*.json}, written by \path{common/runlog.py}; registry: \path{results/experiment_registry.md}. \\
+Settings in the report differ from the code & Table~1 of the report gives the settings of the recorded runs. GPU count, steps per epoch and effective batch are read from the logs and cross-checked by \path{tools/analyze_runs.py}. Wrong statements corrected: mBART checkpoint name, ``cleaned dataset'', batch sizes, ``additional checkpoints''. \\
+Numbers typed by hand & Validation numbers are written by \path{tools/report_numbers.py} from \texttt{results/}. \\
+Missing Phase 1 records & Exported MLflow runs: \path{results/phase1/mlflow_runs.json}; report \S5.3. \\
+No error analysis, weak justification & Report \S2, \S5.2; \path{results/error_analysis.md}. \\
+No references & Reference list added. \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\textbf{Correction of a Phase 1 statement.} While exporting the MLflow records we found that the Phase 1 ByT5 values (12.34 / 45.67 / 23.74) came from \texttt{mlflow\_debug}, a 0.7-second test of the logging connection with placeholder values, not from a trained model. Our rebuttal named this run as evidence, which was wrong. Real ByT5 runs with the described settings are listed in report \S5.3. All Phase 1 validation numbers are withdrawn and replaced by the Phase 2 results.
+
+\end{document}

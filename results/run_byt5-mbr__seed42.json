@@ -1,0 +1,24 @@
+{
+  "system": "byt5-mbr",
+  "seed": 42,
+  "created_utc": "2026-11-24T06:34:03",
+  "metric": "BLEU=sacrebleu-2.x-13a-exp | chrF++=sacrebleu-2.x-c6-w2-b2 | geo_mean=sqrt(BLEU*chrF++)",
+  "n_val_docs": 156,
+  "val_ids_sha256": "1939161cfcb9ff85082f20b36be2362da429f1da14f8a94f289249ffb78e1304",
+  "final_val": {
+    "bleu": 10.350433384876752,
+    "chrfpp": 28.554259896307176,
+    "geo_mean": 17.191537595898314
+  },
+  "hyperparameters": {
+    "members": [
+      "byt5",
+      "byt5-member2"
+    ],
+    "num_beams": 8,
+    "num_return_sequences": 5,
+    "utility": "sentence chrF++"
+  },
+  "notes": null,
+  "log_history": []
+}

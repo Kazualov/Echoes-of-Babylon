@@ -220,3 +220,21 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local only
+.DS_Store
+train.csv
+test.csv
+qwen_lora_export/
+*.safetensors
+results-2/
+
+# LaTeX build files
+*.aux
+*.out
+*.toc
+*.synctex.gz
+report/*.log
+report/*.pdf
+
+.lama-workspace.json

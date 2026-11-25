@@ -1,0 +1,266 @@
+{
+ "source": "https://dagshub.com/witch2256/pomello_donatello.mlflow",
+ "exported": "2026-11-25",
+ "comment": "Phase 1 MLflow runs. Splits and metrics differ between models; not comparable with each other or with Phase 2.",
+ "runs": [
+  {
+   "run_id": "634d0bbbd3754152955947ff1c5425b2",
+   "run_name": "mbart50-clean-finetuning",
+   "experiment_id": "0",
+   "status": "FINISHED",
+   "start_utc": "2026-09-08T08:52:53+00:00",
+   "duration_s": 4381.8,
+   "role": "cited",
+   "note": "mBART row of Phase 1 Tables 1 and 3",
+   "params": {
+    "model_name": "facebook/mbart-large-50-many-to-many-mmt",
+    "lr": "5e-05",
+    "batch_size": "1",
+    "epochs": "5",
+    "max_src_len": "256",
+    "max_tgt_len": "256",
+    "data_columns": "clean"
+   },
+   "metrics": {
+    "val_chrF_pp": 40.7986,
+    "val_bleu": 20.1166,
+    "val_loss": 1.2911603450775146
+   }
+  },
+  {
+   "run_id": "52ae01a034ce4783ab6f8eee6e9726b4",
+   "run_name": "gaudy-toad-103",
+   "experiment_id": "1",
+   "status": "FINISHED",
+   "start_utc": "2026-09-08T22:23:25+00:00",
+   "duration_s": 7084.5,
+   "role": "cited",
+   "note": "Qwen row of Phase 1 Tables 1 and 3",
+   "params": {
+    "base_model": "Qwen/Qwen2.5-7B-Instruct",
+    "architecture": "qwen2.5-7b-qlora",
+    "learning_rate": "0.0002",
+    "lr_scheduler": "cosine",
+    "warmup_ratio": "0.05",
+    "weight_decay": "0.01",
+    "batch_size": "1",
+    "gradient_accumulation": "16",
+    "max_length": "512",
+    "max_new_tokens": "256",
+    "epochs": "2.0",
+    "lora_r": "16",
+    "lora_alpha": "32",
+    "lora_dropout": "0.05",
+    "quantization": "4bit-nf4-double-quant",
+    "compute_dtype": "float16",
+    "gradient_checkpointing": "True",
+    "optimizer": "paged_adamw_8bit",
+    "train_size": "1404",
+    "val_size": "157",
+    "seed": "42"
+   },
+   "metrics": {
+    "val_BLEU": 11.440218338719012,
+    "val_loss": 0.8427721858024597,
+    "val_chrf_plus_plus": 29.46415179159852,
+    "train_loss": 1.3125703497366472
+   }
+  },
+  {
+   "run_id": "2d21940c42ad41cd93caa3b7ec3031f1",
+   "run_name": "mlflow_debug",
+   "experiment_id": "2",
+   "status": "FINISHED",
+   "start_utc": "2026-09-12T08:48:50+00:00",
+   "duration_s": 0.7,
+   "role": "cited",
+   "note": "source of the Phase 1 ByT5 row: logging test with placeholder values, not a training run",
+   "params": {},
+   "metrics": {
+    "train_loss": 1.234,
+    "val_loss": 1.567,
+    "val_bleu": 12.34,
+    "val_chrfpp": 45.67
+   }
+  },
+  {
+   "run_id": "a4296d036f6d423c8686b366da4cb46e",
+   "run_name": "byt5_model_1",
+   "experiment_id": "2",
+   "status": "FINISHED",
+   "start_utc": "2026-09-12T08:49:29+00:00",
+   "duration_s": 1818.0,
+   "role": "context",
+   "note": "ByT5, 10 epochs, lr 3e-4 (the configuration described in Phase 1 section 2.3); chrF++ not logged",
+   "params": {
+    "learning_rate": "0.0003",
+    "batch_size": "8",
+    "max_length": "256",
+    "epochs": "10",
+    "lora_r": "None",
+    "lora_alpha": "None",
+    "model_idx": "1",
+    "base_model": "google/byt5-small"
+   },
+   "metrics": {
+    "train_loss": 1.4764548199971517,
+    "val_loss": 0.5480486750602722,
+    "val_bleu": 25.310032737623864,
+    "val_chrfpp": 0
+   }
+  },
+  {
+   "run_id": "7ff84a2842504f10a6c9b0de15887959",
+   "run_name": "byt5_model_1",
+   "experiment_id": "2",
+   "status": "FAILED",
+   "start_utc": "2026-09-12T20:59:02+00:00",
+   "duration_s": 1969.3,
+   "role": "context",
+   "note": "ByT5, 10 epochs, lr 3e-4; run marked FAILED after the final metrics were logged",
+   "params": {
+    "learning_rate": "0.0003",
+    "batch_size": "8",
+    "max_length": "256",
+    "epochs": "10",
+    "lora_r": "None",
+    "lora_alpha": "None",
+    "model_idx": "1",
+    "base_model": "google/byt5-small"
+   },
+   "metrics": {
+    "final_train_loss": 1.4764548199971517,
+    "final_val_loss": 0.5480486750602722,
+    "final_val_bleu": 25.310032737623864,
+    "final_val_chrfpp": 43.29924209864143,
+    "train_loss_epoch": 1.0762879848480225,
+    "val_loss_epoch": 0.5480486750602722,
+    "val_bleu_epoch": 25.310032737623864,
+    "val_chrfpp_epoch": 43.29924209864143
+   }
+  },
+  {
+   "run_id": "316d7e4eb2394b4ebcdcea895031bd2b",
+   "run_name": "byt5_model_1",
+   "experiment_id": "2",
+   "status": "FINISHED",
+   "start_utc": "2026-09-14T12:42:49+00:00",
+   "duration_s": 1879.6,
+   "role": "context",
+   "note": "ByT5, 10 epochs, lr 3e-4",
+   "params": {
+    "learning_rate": "0.0003",
+    "batch_size": "8",
+    "max_length": "256",
+    "epochs": "10",
+    "lora_r": "None",
+    "lora_alpha": "None",
+    "model_idx": "1",
+    "base_model": "google/byt5-small"
+   },
+   "metrics": {
+    "train_loss": 1.4856598256429037,
+    "val_loss": 0.5488406419754028,
+    "val_bleu": 24.421779056773286,
+    "val_chrfpp": 42.74644530977951,
+    "val_geom_mean": 0
+   }
+  },
+  {
+   "run_id": "398a01b9e448480daccaa50253075082",
+   "run_name": "mbart50-raw-train-csv-no-preprocessing",
+   "experiment_id": "0",
+   "status": "FINISHED",
+   "start_utc": "2026-09-14T17:41:57+00:00",
+   "duration_s": 1979.5,
+   "role": "latest",
+   "note": "last Phase 1 mBART run",
+   "params": {
+    "model_name": "facebook/mbart-large-50-many-to-many-mmt",
+    "lr": "5e-05",
+    "batch_size": "4",
+    "epochs": "5",
+    "max_src_len": "256",
+    "max_tgt_len": "256",
+    "data_columns": "raw_train_csv_untouched"
+   },
+   "metrics": {
+    "train_loss": 1.7975608825683593,
+    "val_loss": 1.2657972574234009,
+    "chrf_pp": 48.3856,
+    "bleu": 22.9532,
+    "geo_mean_chrf_bleu": 33.3257,
+    "val_chrF_pp": 48.3856,
+    "val_bleu": 22.9532,
+    "val_geo_mean_chrf_bleu": 33.3257
+   }
+  },
+  {
+   "run_id": "4c10e51f3a2845318553287b9f3ac0fe",
+   "run_name": "salty-shark-182",
+   "experiment_id": "1",
+   "status": "FINISHED",
+   "start_utc": "2026-09-14T14:48:56+00:00",
+   "duration_s": 7792.8,
+   "role": "latest",
+   "note": "last Phase 1 Qwen run",
+   "params": {
+    "base_model": "Qwen/Qwen2.5-7B-Instruct",
+    "architecture": "qwen2.5-7b-qlora",
+    "learning_rate": "0.0002",
+    "lr_scheduler": "cosine",
+    "warmup_ratio": "0.05",
+    "weight_decay": "0.01",
+    "batch_size": "1",
+    "gradient_accumulation": "16",
+    "max_length": "512",
+    "max_new_tokens": "256",
+    "epochs": "2.0",
+    "lora_r": "16",
+    "lora_alpha": "32",
+    "lora_dropout": "0.05",
+    "quantization": "4bit-nf4-double-quant",
+    "compute_dtype": "float16",
+    "gradient_checkpointing": "True",
+    "optimizer": "paged_adamw_8bit",
+    "train_size": "1404",
+    "val_size": "157",
+    "seed": "42"
+   },
+   "metrics": {
+    "val_BLEU": 8.059266875027726,
+    "train_loss": 1.304524465040727,
+    "val_loss": 0.8864513039588928,
+    "geom_mean_score": 14.259129424186698,
+    "val_chrf_plus_plus": 25.2284451040725
+   }
+  },
+  {
+   "run_id": "16bd7920925c4992a6ff1181efbdebd9",
+   "run_name": "byt5_model_1",
+   "experiment_id": "2",
+   "status": "FINISHED",
+   "start_utc": "2026-09-15T14:54:20+00:00",
+   "duration_s": 4279.9,
+   "role": "latest",
+   "note": "last Phase 1 ByT5 run",
+   "params": {
+    "learning_rate": "0.0002",
+    "batch_size": "8",
+    "max_length": "256",
+    "epochs": "20",
+    "lora_r": "None",
+    "lora_alpha": "None",
+    "model_idx": "1",
+    "base_model": "google/byt5-small"
+   },
+   "metrics": {
+    "train_loss": 1.1949138622392308,
+    "val_loss": 0.4921330511569977,
+    "val_bleu": 30.886542959184972,
+    "val_chrfpp": 49.830516791189076,
+    "val_geom_mean": 0
+   }
+  }
+ ]
+}

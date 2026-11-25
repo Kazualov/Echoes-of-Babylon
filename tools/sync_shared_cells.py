@@ -14,6 +14,7 @@ import sys
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 NOTEBOOKS = ["mbart50.ipynb", "byte-level-seq2seq.ipynb", "pipeline_QwenQLoRa.ipynb", "ensemble-pipeline.ipynb"]
+MODULES = ["common/split.py", "common/metrics.py", "common/runlog.py", "common/env.py"]
 MARKER = re.compile(r"^# >>> SHARED CELL: (common/[\w]+\.py)")
 
 
@@ -42,17 +43,20 @@ def main():
     for name in NOTEBOOKS:
         path = os.path.join(ROOT, name)
         nb = json.load(open(path, encoding="utf-8"))
-        changed = False
+        changed, seen = False, set()
         for cell in nb["cells"]:
             src = "".join(cell["source"])
             m = MARKER.match(src)
             if not m:
                 continue
             want = to_source(cell_body(m.group(1)))
-            if cell["source"] != want:
+            # Compare the text: Kaggle stores a cell as one string, Jupyter as a list of lines.
+            seen.add(m.group(1))
+            if src != "".join(want):
                 stale.append(f"{name}: {m.group(1)}")
                 cell["source"] = want
                 changed = True
+        stale += [f"{name}: {mod} (cell missing)" for mod in MODULES if mod not in seen]
         if changed and not args.check:
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(nb, f, indent=1, ensure_ascii=False)

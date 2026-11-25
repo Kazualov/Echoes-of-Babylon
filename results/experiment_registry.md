@@ -1,0 +1,8 @@
+| System | Seed | Notebook | BLEU | chrF++ | GM | Best epoch | Selected by | GPUs | Steps/epoch | Effective batch | Key hyperparameters | Shared split | Run record |
+|---|---:|---|---:|---:|---:|---:|---|---:|---:|---:|---|---|---|
+| byt5 | 42 | byte-level-seq2seq.ipynb | 13.64 | 31.12 | 20.6 | 20 | eval_geom_mean=20.23 | 2 | 88 | 16 | learning_rate=0.0002; epochs=20; batch_size=2; grad_accum=4; max_source_len=1024; max_target_len=1408; train_rows=1405 | yes | run_byt5__seed42.json |
+| byt5-mbr | 42 | byte-level-seq2seq.ipynb | 10.35 | 28.55 | 17.19 | - | - | - | - | - | members=['byt5', 'byt5-member2'] | yes | run_byt5-mbr__seed42.json |
+| byt5-member2 | 42 | byte-level-seq2seq.ipynb | 10.23 | 26.12 | 16.35 | 14 | eval_geom_mean=13.09 | 2 | 75 | 16 | learning_rate=0.0002; epochs=15; batch_size=2; grad_accum=4; max_source_len=1024; max_target_len=1408; train_rows=1194 | yes | run_byt5-member2__seed42.json |
+| mbart50 | 42 | mbart50.ipynb | 33.4 | 53.93 | 42.44 | 4 | eval_geo_mean=43.39 | 2 | 88 | 16 | learning_rate=5e-05; num_train_epochs=5; per_device_train_batch_size=2; gradient_accumulation_steps=4; effective_batch_size=16; max_source_length=576; max_target_length=448 | yes | run_mbart50__seed42.json |
+| qwen2.5-7b-lora | 42 | pipeline_QwenQLoRa.ipynb | 25.73 | 47.56 | 34.98 | 2 | eval_loss=2.3142 | 2 | 44 | 32 | learning_rate=0.0002; epochs=2.0; batch_size=1; grad_accum=16; lora_r=16; max_length=1024; max_new_tokens=448 | yes | run_qwen2.5-7b-lora__seed42.json |
+| mbr3-ensemble | 42 | tools/mbr_from_predictions.py | 30.26 | 52.31 | 39.79 | - | - | - | - | - | members=['byt5', 'mbart50', 'qwen2.5-7b-lora'] | yes | run_mbr3-ensemble__seed42.json |
